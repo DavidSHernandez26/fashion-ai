@@ -107,7 +107,6 @@ app.post("/api/subir-prenda", upload.single("imagen"), async (req, res) => {
     let imagenOriginalUrl = imagen_url;
     let imagenOriginalBuffer = null;
 
-    /* ── Si viene archivo, subirlo a Supabase ── */
     if (req.file) {
       const ext = req.file.originalname.split(".").pop();
       const fileName = `${usuario_id}_${Date.now()}.${ext}`;
@@ -127,18 +126,15 @@ app.post("/api/subir-prenda", upload.single("imagen"), async (req, res) => {
       console.log("📤 Archivo subido:", imagenOriginalUrl);
     }
 
-    /* ── Descargar imagen si vino como URL ── */
     if (!imagenOriginalBuffer) {
       imagenOriginalBuffer = await descargarImagen(imagenOriginalUrl);
       if (!imagenOriginalBuffer) throw new Error("No se pudo descargar la imagen");
     }
 
-    /* ── Corregir rotación EXIF ── */
     imagenOriginalBuffer = await sharp(imagenOriginalBuffer).rotate().toBuffer();
 
     /* ════════════════════════════════════════
        🟢 FLUJO A: PRENDA INDIVIDUAL
-       remove.bg directo → guardar sin fondo
     ════════════════════════════════════════ */
     if (tipo === "prenda") {
       console.log("👕 Modo: prenda individual");
@@ -146,7 +142,6 @@ app.post("/api/subir-prenda", upload.single("imagen"), async (req, res) => {
       const sinFondo = await removeBackground(imagenOriginalBuffer);
       const bufferFinal = sinFondo || imagenOriginalBuffer;
 
-      /* ── Detectar nombre y color con IA ── */
       const ai = await openai.chat.completions.create({
         model: MODEL,
         messages: [
@@ -188,7 +183,6 @@ Reglas estrictas:
 
       console.log("👕 Detectado:", descripcion);
 
-      /* ── Subir imagen sin fondo ── */
       const cleanName = `${usuario_id}_${Date.now()}_${nombre.replace(/\s/g, "_")}.png`;
       const { error: cleanError } = await supabase.storage
         .from("prendas")
@@ -213,8 +207,6 @@ Reglas estrictas:
 
     /* ════════════════════════════════════════
        🟣 FLUJO B: OUTFIT COMPLETO
-       Guardar foto tal como está + analizar
-       prendas para recomendaciones
     ════════════════════════════════════════ */
     if (tipo === "outfit") {
       console.log("🧥 Modo: outfit completo");
@@ -334,7 +326,7 @@ app.delete("/api/prendas/:id", async (req, res) => {
 ─────────────────────────────── */
 app.post("/api/fashion", async (req, res) => {
   try {
-    const { usuario_id, mensaje } = req.body;
+    const { usuario_id, mensaje, historial = [], outfit_ids_anteriores = [] } = req.body;
 
     if (!usuario_id || !mensaje) return res.status(400).json({ error: "Faltan datos" });
 
@@ -346,49 +338,111 @@ app.post("/api/fashion", async (req, res) => {
     if (error) throw error;
 
     if (!prendas || prendas.length === 0) {
-      return res.json({ respuesta: "No tienes prendas registradas.", outfit: [] });
+      return res.json({
+        respuesta: "No tienes prendas registradas aún. ¡Sube algunas fotos de tu closet!",
+        outfit: [],
+        outfit_guardado: null,
+      });
     }
 
-    const contexto = prendas.map((p) => {
-      if (p.tipo === "outfit" && p.metadata_ia?.prendas) {
-        const lista = p.metadata_ia.prendas
-          .map((x) => `${x.nombre} (${x.color})`)
-          .join(", ");
-        return `(${p.id}) Outfit: ${p.descripcion} — contiene: ${lista}`;
-      }
-      return `(${p.id}) ${p.descripcion}`;
-    }).join("\n");
+    const prendasSueltas = prendas.filter((p) => p.tipo === "prenda");
+    const outfitsGuardados = prendas.filter((p) => p.tipo === "outfit");
+
+    const contextoPrendas = prendasSueltas.length > 0
+      ? "PRENDAS SUELTAS DISPONIBLES:\n" +
+        prendasSueltas.map((p) => `[ID:${p.id}] ${p.tipo?.toUpperCase()}: ${p.descripcion}`).join("\n")
+      : "No hay prendas sueltas.";
+
+    const contextoOutfits = outfitsGuardados.length > 0
+      ? "\n\nOUTFITS GUARDADOS (puedes recomendarlos por su ID, o usarlos como referencia de estilo):\n" +
+        outfitsGuardados.map((p) => {
+          const lista = p.metadata_ia?.prendas?.map((x) => `${x.nombre} (${x.color})`).join(", ") || "";
+          return `[ID:${p.id}] OUTFIT: ${p.descripcion}${lista ? ` — contiene: ${lista}` : ""}`;
+        }).join("\n")
+      : "";
+
+    const prendasActuales = prendasSueltas.filter((p) =>
+      outfit_ids_anteriores.includes(p.id)
+    );
+    const contextoActual = prendasActuales.length > 0
+      ? "\n\nOUTFIT ACTUAL EN EL MANIQUÍ:\n" +
+        prendasActuales.map((p) => `[ID:${p.id}] ${p.descripcion}`).join("\n")
+      : "";
+
+    const historialTexto = historial.length > 0
+      ? "\n\nHISTORIAL DE CONVERSACIÓN:\n" +
+        historial
+          .map((h) => `${h.role === "user" ? "Usuario" : "Asistente"}: ${h.text}`)
+          .join("\n")
+      : "";
 
     const ai = await openai.chat.completions.create({
       model: MODEL,
       messages: [
         {
           role: "system",
-          content: 'Eres un asistente de moda. Devuelve SOLO JSON {"respuesta":"","outfit_ids":[id,id]}',
+          content: `Eres un estilista personal experto. Armas outfits con las prendas del closet del usuario.
+
+REGLAS ESTRICTAS:
+1. Si el usuario pide prendas sueltas o un outfit armado por ti, usa SOLO IDs de PRENDAS SUELTAS en outfit_ids. Máximo 1 parte superior, 1 parte inferior, 1 calzado, 1-2 accesorios.
+2. Si el usuario pide un OUTFIT GUARDADO específico (ej: "muéstrame el outfit casual", "dame ese look que subí"), usa el ID del outfit guardado en outfit_ids.
+3. Si el usuario dice "sin X prenda", NUNCA la incluyas. Regla absoluta.
+4. Si el usuario pide COMPLEMENTAR el outfit actual del maniquí, mantén las prendas actuales y agrega solo lo pedido.
+5. Si el usuario pide algo NUEVO, propón combinaciones completamente distintas.
+6. Mantén el hilo de la conversación.
+7. Explica brevemente por qué combinan las prendas.
+8. Responde en español con calidez y personalidad.
+9. Devuelve SOLO este JSON:
+{"respuesta":"explicación","outfit_ids":[id1,id2]}
+
+REGLA DE ORO: outfit_ids puede tener IDs de prendas sueltas O un solo ID de outfit guardado, nunca ambos mezclados.`,
         },
         {
           role: "user",
-          content: `Estas son las prendas y outfits disponibles:\n${contexto}\n\n${mensaje}`,
+          content: `${contextoPrendas}${contextoOutfits}${contextoActual}${historialTexto}\n\nMensaje del usuario: ${mensaje}`,
         },
       ],
-      max_completion_tokens: 500,
+      max_completion_tokens: 600,
+      temperature: 0.75,
     });
 
     const parsed = safeParseJSON(ai.choices[0].message.content);
 
     if (!parsed) {
-      return res.json({ respuesta: "Te armé un outfit con lo disponible.", outfit: prendas.slice(0, 4) });
+      const fallback = [...prendasSueltas].sort(() => Math.random() - 0.5).slice(0, 3);
+      return res.json({
+        respuesta: "Te armé una combinación con lo que tienes disponible.",
+        outfit: fallback,
+        outfit_guardado: null,
+      });
     }
 
-    const outfit = prendas.filter((p) => parsed.outfit_ids?.includes(p.id));
+    /* ── Verificar si recomienda un outfit guardado ── */
+    const outfitGuardadoRecomendado = outfitsGuardados.find((p) =>
+      parsed.outfit_ids?.includes(p.id)
+    );
+
+    if (outfitGuardadoRecomendado) {
+      return res.json({
+        respuesta: parsed.respuesta || "Aquí tienes el outfit",
+        outfit: [],
+        outfit_guardado: outfitGuardadoRecomendado,
+      });
+    }
+
+    /* ── Prendas sueltas en maniquí ── */
+    const outfit = prendasSueltas.filter((p) => parsed.outfit_ids?.includes(p.id));
+    const fallback = [...prendasSueltas].sort(() => Math.random() - 0.5).slice(0, 3);
 
     res.json({
       respuesta: parsed.respuesta || "Aquí tienes un outfit",
-      outfit: outfit.length ? outfit : prendas.slice(0, 4),
+      outfit: outfit.length ? outfit : fallback,
+      outfit_guardado: null,
     });
+
   } catch (err) {
     console.error("🔥 fashion:", err.message);
-    res.status(500).json({ respuesta: "Error generando outfit", outfit: [] });
+    res.status(500).json({ respuesta: "Error generando outfit", outfit: [], outfit_guardado: null });
   }
 });
 
