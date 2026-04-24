@@ -342,6 +342,7 @@ app.post("/api/fashion", async (req, res) => {
         respuesta: "No tienes prendas registradas aún. ¡Sube algunas fotos de tu closet!",
         outfit: [],
         outfit_guardado: null,
+        cambiar_panel: false,
       });
     }
 
@@ -354,7 +355,7 @@ app.post("/api/fashion", async (req, res) => {
       : "No hay prendas sueltas.";
 
     const contextoOutfits = outfitsGuardados.length > 0
-      ? "\n\nOUTFITS GUARDADOS (puedes recomendarlos por su ID, o usarlos como referencia de estilo):\n" +
+      ? "\n\nOUTFITS GUARDADOS:\n" +
         outfitsGuardados.map((p) => {
           const lista = p.metadata_ia?.prendas?.map((x) => `${x.nombre} (${x.color})`).join(", ") || "";
           return `[ID:${p.id}] OUTFIT: ${p.descripcion}${lista ? ` — contiene: ${lista}` : ""}`;
@@ -384,16 +385,19 @@ app.post("/api/fashion", async (req, res) => {
           content: `Eres un estilista personal experto. Armas outfits con las prendas del closet del usuario.
 
 REGLAS ESTRICTAS:
-1. Si el usuario pide prendas sueltas o un outfit armado por ti, usa SOLO IDs de PRENDAS SUELTAS en outfit_ids. Máximo 1 parte superior, 1 parte inferior, 1 calzado, 1-2 accesorios.
-2. Si el usuario pide un OUTFIT GUARDADO específico (ej: "muéstrame el outfit casual", "dame ese look que subí"), usa el ID del outfit guardado en outfit_ids.
+1. Si el usuario pide prendas sueltas, usa SOLO IDs de PRENDAS SUELTAS en outfit_ids. Máximo 1 parte superior, 1 parte inferior, 1 calzado, 1-2 accesorios.
+2. Si el usuario pide un OUTFIT GUARDADO específico, usa el ID del outfit guardado en outfit_ids.
 3. Si el usuario dice "sin X prenda", NUNCA la incluyas. Regla absoluta.
-4. Si el usuario pide COMPLEMENTAR el outfit actual del maniquí, mantén las prendas actuales y agrega solo lo pedido.
-5. Si el usuario pide algo NUEVO, propón combinaciones completamente distintas.
+4. Si el usuario pide COMPLEMENTAR el outfit actual, mantén las prendas actuales y agrega solo lo pedido.
+5. Si el usuario pide algo NUEVO o DIFERENTE, propón combinaciones completamente distintas.
 6. Mantén el hilo de la conversación.
 7. Explica brevemente por qué combinan las prendas.
 8. Responde en español con calidez y personalidad.
-9. Devuelve SOLO este JSON:
-{"respuesta":"explicación","outfit_ids":[id1,id2]}
+9. "cambiar_panel" debe ser:
+   - true: si el usuario pide un outfit NUEVO, DIFERENTE, o pide VER un outfit guardado.
+   - false: si el usuario solo pide consejos, mejoras en texto, pregunta algo, o pide sugerencias sin cambiar el outfit actual.
+10. Devuelve SOLO este JSON sin ningún texto adicional:
+{"respuesta":"explicación","outfit_ids":[id1,id2],"cambiar_panel":true}
 
 REGLA DE ORO: outfit_ids puede tener IDs de prendas sueltas O un solo ID de outfit guardado, nunca ambos mezclados.`,
         },
@@ -408,14 +412,19 @@ REGLA DE ORO: outfit_ids puede tener IDs de prendas sueltas O un solo ID de outf
 
     const parsed = safeParseJSON(ai.choices[0].message.content);
 
+    /* ── Fallback si no hay parsed ── */
     if (!parsed) {
       const fallback = [...prendasSueltas].sort(() => Math.random() - 0.5).slice(0, 3);
       return res.json({
         respuesta: "Te armé una combinación con lo que tienes disponible.",
         outfit: fallback,
         outfit_guardado: null,
+        cambiar_panel: true,
       });
     }
+
+    /* ── Definir cambiarPanel DESPUÉS de verificar parsed ── */
+    const cambiarPanel = parsed.cambiar_panel ?? true;
 
     /* ── Verificar si recomienda un outfit guardado ── */
     const outfitGuardadoRecomendado = outfitsGuardados.find((p) =>
@@ -427,6 +436,7 @@ REGLA DE ORO: outfit_ids puede tener IDs de prendas sueltas O un solo ID de outf
         respuesta: parsed.respuesta || "Aquí tienes el outfit",
         outfit: [],
         outfit_guardado: outfitGuardadoRecomendado,
+        cambiar_panel: cambiarPanel,
       });
     }
 
@@ -438,11 +448,17 @@ REGLA DE ORO: outfit_ids puede tener IDs de prendas sueltas O un solo ID de outf
       respuesta: parsed.respuesta || "Aquí tienes un outfit",
       outfit: outfit.length ? outfit : fallback,
       outfit_guardado: null,
+      cambiar_panel: cambiarPanel,
     });
 
   } catch (err) {
     console.error("🔥 fashion:", err.message);
-    res.status(500).json({ respuesta: "Error generando outfit", outfit: [], outfit_guardado: null });
+    res.status(500).json({
+      respuesta: "Error generando outfit",
+      outfit: [],
+      outfit_guardado: null,
+      cambiar_panel: false,
+    });
   }
 });
 
