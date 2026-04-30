@@ -19,9 +19,7 @@ def get_session(model_name: str):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Pre-cargar modelos al iniciar
-    get_session("birefnet-general")
-    get_session("u2net_cloth_seg")
+    get_session("isnet-general-use")
     yield
 
 

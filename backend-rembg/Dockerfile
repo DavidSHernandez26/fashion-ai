@@ -12,10 +12,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Pre-descargar modelos durante el build para arranque rápido
 RUN python -c "\
 from rembg import new_session; \
-print('Descargando u2net_cloth_seg...'); \
-new_session('u2net_cloth_seg'); \
-print('Descargando birefnet-general...'); \
-new_session('birefnet-general'); \
+print('Descargando isnet-general-use...'); \
+new_session('isnet-general-use'); \
 print('Modelos listos')"
 
 COPY --chown=user main.py .
