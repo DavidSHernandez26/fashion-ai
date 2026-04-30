@@ -10,7 +10,7 @@ import sharp from "sharp";
 import { createClient } from "@supabase/supabase-js";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
-import imglyRemoveBg from "@imgly/background-removal-node";
+import { removeBackground as imglyRemoveBg } from "@imgly/background-removal-node";
 
 dotenv.config();
 
@@ -98,22 +98,20 @@ async function removeBackground(imageBuffer, quality = "large") {
   try {
     console.log(`🧼 Removiendo fondo local (calidad: ${quality}), buffer:`, imageBuffer.length);
 
-    const result = await imglyRemoveBg(imageBuffer.buffer, {
+    // Convertir a PNG para garantizar compatibilidad con el modelo
+    const pngBuffer = await sharp(imageBuffer).png().toBuffer();
+    const blob = new Blob([pngBuffer], { type: "image/png" });
+
+    const resultBlob = await imglyRemoveBg(blob, {
       model: quality === "large" ? "medium" : "small",
       output: { format: "image/png", quality: 1 },
     });
 
-    let buffer;
-    if (result && typeof result.arrayBuffer === "function") {
-      buffer = Buffer.from(await result.arrayBuffer());
-    } else {
-      buffer = Buffer.from(result);
-    }
-
+    const buffer = Buffer.from(await resultBlob.arrayBuffer());
     console.log(`🧼 Fondo removido OK (${quality}), resultado:`, buffer.length, "bytes");
     return buffer;
   } catch (err) {
-    console.error("⚠️ removeBackground excepción:", err.message);
+    console.error("⚠️ removeBackground excepción:", err.message, err.stack);
     return null;
   }
 }
