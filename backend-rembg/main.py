@@ -1,10 +1,12 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, File, UploadFile, Form
+from fastapi import FastAPI, File, UploadFile, Form, Header, HTTPException
 from fastapi.responses import Response
 from rembg import remove, new_session
+import os
 
 ALLOWED_MODELS = {"birefnet-general", "u2net_cloth_seg", "u2net"}
 _sessions: dict = {}
+SECRET = os.environ.get("REMBG_SECRET", "")
 
 
 def get_session(model_name: str):
@@ -26,8 +28,14 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 
+def verify_secret(x_rembg_secret: str = Header(default="")):
+    if SECRET and x_rembg_secret != SECRET:
+        raise HTTPException(status_code=401, detail="No autorizado")
+
+
 @app.get("/health")
-def health():
+def health(x_rembg_secret: str = Header(default="")):
+    verify_secret(x_rembg_secret)
     return {"status": "ok", "models": list(_sessions.keys())}
 
 
@@ -35,7 +43,10 @@ def health():
 async def remove_bg(
     file: UploadFile = File(...),
     model: str = Form(default="birefnet-general"),
+    x_rembg_secret: str = Header(default=""),
 ):
+    verify_secret(x_rembg_secret)
+
     if model not in ALLOWED_MODELS:
         model = "birefnet-general"
 

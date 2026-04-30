@@ -108,6 +108,7 @@ async function removeBackground(imageBuffer, model = "birefnet-general") {
 
     const res = await fetch(`${rembgUrl}/remove-bg`, {
       method: "POST",
+      headers: { "x-rembg-secret": process.env.REMBG_SECRET || "" },
       body: formData,
     });
 
