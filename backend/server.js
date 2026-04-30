@@ -60,6 +60,52 @@ async function requireAuth(req, res, next) {
 /* ─────────────────────────────────────
    🧠 PARSE JSON
 ───────────────────────────────────── */
+/* ─────────────────────────────────────
+   ⚡ CACHE DE PRENDAS EN MEMORIA
+   Evita round-trips a Supabase en cada petición de fashion/swap
+───────────────────────────────────── */
+const _prendasCache = new Map(); // uid → { data, ts }
+const PRENDAS_TTL   = 3 * 60 * 1000; // 3 minutos
+
+function getCachedPrendas(uid) {
+  const e = _prendasCache.get(uid);
+  if (e && Date.now() - e.ts < PRENDAS_TTL) return e.data;
+  _prendasCache.delete(uid);
+  return null;
+}
+
+function setCachedPrendas(uid, data) {
+  _prendasCache.set(uid, { data, ts: Date.now() });
+}
+
+function invalidatePrendasCache(uid) {
+  _prendasCache.delete(uid);
+}
+
+function normalizarTipo(descripcion = "") {
+  const d = descripcion.toLowerCase();
+  const parts = d.split(" - ");
+  const tipoAlmacenado = parts[parts.length - 1]?.trim() || "otro";
+  const nombreParte = parts.slice(0, -1).join(" ");
+  // Sudaderas y hoodies van en la misma capa que chaquetas → abrigo
+  if (
+    tipoAlmacenado === "parte superior" &&
+    (nombreParte.includes("sudadera") || nombreParte.includes("hoodie") || nombreParte.includes("sweatshirt"))
+  ) {
+    return "abrigo";
+  }
+  return tipoAlmacenado;
+}
+
+function deduplicarPorTipo(prendas) {
+  const seen = new Map();
+  for (const p of [...prendas].sort(() => Math.random() - 0.5)) {
+    const tipo = normalizarTipo(p.descripcion);
+    if (!seen.has(tipo)) seen.set(tipo, p);
+  }
+  return [...seen.values()];
+}
+
 function safeParseJSON(content) {
   try {
     const text = Array.isArray(content)
@@ -517,7 +563,8 @@ Reglas estrictas:
 - Para el color: sé muy específico (café, marrón, beige, crema, burdeos, mostaza, camel, terracota, verde oliva, azul marino, etc). NO uses colores genéricos.
 - Si hay varios colores menciona el principal: "negro con blanco".
 - Para el nombre: usa el término correcto (tenis, botines, mocasines, chaqueta, sudadera, hoodie, polo, blusa, etc).
-- Para el tipo: usa únicamente: calzado, parte superior, parte inferior, accesorio, abrigo.`,
+- Para el tipo: usa únicamente: calzado, parte superior, parte inferior, accesorio, abrigo.
+- Sudaderas, hoodies, chaquetas, chamarras, blazers, sacos → tipo SIEMPRE "abrigo".`,
             },
             { type: "image_url", image_url: { url: imagenOriginalUrl, detail: "high" } },
           ],
@@ -538,6 +585,7 @@ Reglas estrictas:
         imagen_url: imagenOriginalUrl,
         descripcion, metadata_ia: parsed || {},
       }]);
+      invalidatePrendasCache(usuario_id);
 
       return res.json({
         mensaje: tieneFondo
@@ -591,6 +639,7 @@ Reglas: colores específicos, nombres correctos, tipos: calzado/parte superior/p
         descripcion: descripcionOutfit,
         metadata_ia: { prendas: prendasDetectadas },
       }]);
+      invalidatePrendasCache(usuario_id);
 
       return res.json({
         mensaje: `✅ Outfit guardado con ${prendasDetectadas.length} prenda(s) detectadas`,
@@ -613,10 +662,19 @@ app.get("/api/prendas", async (req, res) => {
   try {
     const { usuario_id, tipo } = req.query;
     if (!usuario_id) return res.status(400).json({ error: "Falta usuario_id" });
+
+    // Cache solo cuando se piden todas (sin filtro de tipo)
+    if (!tipo || tipo === "todos") {
+      const cached = getCachedPrendas(usuario_id);
+      if (cached) return res.json(cached);
+    }
+
     let query = supabase.from("prendas").select("*").eq("usuario_id", usuario_id).order("created_at", { ascending: false });
     if (tipo && tipo !== "todos") query = query.eq("tipo", tipo);
     const { data, error } = await query;
     if (error) throw error;
+
+    if (!tipo || tipo === "todos") setCachedPrendas(usuario_id, data || []);
     res.json(data || []);
   } catch (err) {
     console.error("🔥 get prendas:", err.message);
@@ -635,6 +693,7 @@ app.delete("/api/prendas/:id", requireAuth, async (req, res) => {
     if (prenda.usuario_id !== req.userId) return res.status(403).json({ error: "Sin permiso" });
     const { error } = await supabase.from("prendas").delete().eq("id", id);
     if (error) throw error;
+    invalidatePrendasCache(req.userId);
     res.json({ mensaje: "🗑️ Eliminado" });
   } catch (err) {
     console.error("🔥 delete:", err.message);
@@ -650,9 +709,14 @@ app.post("/api/fashion", aiLimiter, async (req, res) => {
     const { usuario_id, mensaje, historial = [], outfit_ids_anteriores = [] } = req.body;
     if (!usuario_id || !mensaje) return res.status(400).json({ error: "Faltan datos" });
 
-    const { data: prendas, error } = await supabase
-      .from("prendas").select("id, descripcion, imagen_url, tipo, metadata_ia").eq("usuario_id", usuario_id);
-    if (error) throw error;
+    let prendas = getCachedPrendas(usuario_id);
+    if (!prendas) {
+      const { data, error } = await supabase
+        .from("prendas").select("*").eq("usuario_id", usuario_id).order("created_at", { ascending: false });
+      if (error) throw error;
+      prendas = data || [];
+      setCachedPrendas(usuario_id, prendas);
+    }
 
     if (!prendas || prendas.length === 0) {
       return res.json({
@@ -701,12 +765,14 @@ Tipos posibles: parte superior, parte inferior, calzado, accesorio, abrigo
 
 REGLAS DE COMBINACIÓN:
 
-1. ESTRUCTURA DEL OUTFIT — siempre respeta esta jerarquía:
-   - 1 parte superior (obligatorio si hay disponibles)
-   - 1 parte inferior (obligatorio si hay disponibles)
-   - 1 calzado (obligatorio si hay disponible)
-   - 1-2 accesorios máximo (opcional, solo si complementan el look)
+1. ESTRUCTURA DEL OUTFIT — selecciona EXACTAMENTE UNO por tipo, nunca repitas:
+   - 1 parte superior (OBLIGATORIO si hay disponibles)
+   - 1 parte inferior (OBLIGATORIO si hay disponibles)
+   - 1 calzado (OBLIGATORIO si hay disponible)
+   - 1 accesorio máximo (opcional, solo si complementa el look)
    - 1 abrigo (opcional, solo si el usuario lo pide o la ocasión lo requiere)
+   - REGLA INQUEBRANTABLE: outfit_ids NUNCA puede tener 2 prendas del mismo tipo. Si hay 2 camisetas, elige solo 1.
+   - Sudaderas y chaquetas son el MISMO tipo (abrigo/capa exterior). Nunca incluyas ambas a la vez.
 
 2. TEORÍA DEL COLOR — aplica estas reglas al recomendar:
    - Neutros (negro, blanco, beige, gris, camel, café) combinan con absolutamente todo
@@ -758,13 +824,13 @@ Devuelve SIEMPRE y ÚNICAMENTE este JSON exacto sin ningún texto antes ni despu
         },
       ],
       max_tokens: 800,
-      temperature: 0.8,
+      temperature: 1.0,
     });
 
     const parsed = safeParseJSON(ai.choices[0].message.content);
 
     if (!parsed) {
-      const fallback = [...prendasSueltas].sort(() => Math.random() - 0.5).slice(0, 3);
+      const fallback = deduplicarPorTipo([...prendasSueltas].sort(() => Math.random() - 0.5));
       return res.json({
         respuesta: "Te armé una combinación con lo que tienes disponible. ¡Pruébala y dime qué piensas!",
         outfit: fallback, outfit_guardado: null, cambiar_panel: true,
@@ -781,8 +847,9 @@ Devuelve SIEMPRE y ÚNICAMENTE este JSON exacto sin ningún texto antes ni despu
       });
     }
 
-    const outfit = prendasSueltas.filter((p) => parsed.outfit_ids?.includes(p.id));
-    const fallback = [...prendasSueltas].sort(() => Math.random() - 0.5).slice(0, 3);
+    const outfitBruto = prendasSueltas.filter((p) => parsed.outfit_ids?.includes(p.id));
+    const outfit = deduplicarPorTipo(outfitBruto);
+    const fallback = deduplicarPorTipo([...prendasSueltas].sort(() => Math.random() - 0.5));
 
     res.json({
       respuesta: parsed.respuesta || "Aquí tienes un outfit que combina muy bien.",
@@ -1178,6 +1245,73 @@ app.delete("/api/notificaciones", async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     console.error("🔥 delete todas notif:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* ─────────────────────────────────────
+   📅 CALENDARIO
+───────────────────────────────────── */
+app.get("/api/calendario", async (req, res) => {
+  try {
+    const { usuario_id, year, month } = req.query;
+    if (!usuario_id) return res.status(400).json({ error: "Falta usuario_id" });
+
+    let query = supabase
+      .from("calendar_outfits")
+      .select("*")
+      .eq("usuario_id", usuario_id)
+      .order("fecha", { ascending: true });
+
+    if (year && month) {
+      const y = String(year);
+      const m = String(month).padStart(2, "0");
+      const lastDay = new Date(parseInt(year), parseInt(month), 0).getDate();
+      query = query.gte("fecha", `${y}-${m}-01`).lte("fecha", `${y}-${m}-${lastDay}`);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    res.json(data || []);
+  } catch (err) {
+    console.error("🔥 get calendario:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/calendario", requireAuth, async (req, res) => {
+  try {
+    const { fecha, imagen_url, descripcion, metadata } = req.body;
+    if (!fecha) return res.status(400).json({ error: "Falta fecha" });
+
+    const { data, error } = await supabase
+      .from("calendar_outfits")
+      .upsert(
+        { usuario_id: req.userId, fecha, imagen_url, descripcion, metadata: metadata || {} },
+        { onConflict: "usuario_id,fecha" }
+      )
+      .select().single();
+
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    console.error("🔥 post calendario:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete("/api/calendario/:id", requireAuth, async (req, res) => {
+  try {
+    const { data: entry } = await supabase
+      .from("calendar_outfits").select("usuario_id").eq("id", req.params.id).single();
+    if (!entry) return res.status(404).json({ error: "No encontrado" });
+    if (entry.usuario_id !== req.userId) return res.status(403).json({ error: "Sin permiso" });
+
+    const { error } = await supabase.from("calendar_outfits").delete().eq("id", req.params.id);
+    if (error) throw error;
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("🔥 delete calendario:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
