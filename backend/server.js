@@ -287,10 +287,10 @@ app.get("/api/usuarios/sugeridos", async (req, res) => {
   }
 });
 
-app.put("/api/perfil", async (req, res) => {
+app.put("/api/perfil", requireAuth, async (req, res) => {
   try {
-    const { usuario_id, username, nombre, bio } = req.body;
-    if (!usuario_id) return res.status(400).json({ error: "Falta usuario_id" });
+    const usuario_id = req.userId;
+    const { username, nombre, bio } = req.body;
 
     if (username) {
       const { data: existing } = await supabase
@@ -345,10 +345,11 @@ app.post("/api/perfil/avatar", upload.single("avatar"), async (req, res) => {
 /* ─────────────────────────────────────
    👥 AMISTADES
 ───────────────────────────────────── */
-app.post("/api/amistad/solicitar", async (req, res) => {
+app.post("/api/amistad/solicitar", requireAuth, async (req, res) => {
   try {
-    const { requester_id, addressee_id } = req.body;
-    if (!requester_id || !addressee_id) return res.status(400).json({ error: "Faltan datos" });
+    const requester_id = req.userId;
+    const { addressee_id } = req.body;
+    if (!addressee_id) return res.status(400).json({ error: "Faltan datos" });
     if (requester_id === addressee_id) return res.status(400).json({ error: "No puedes agregarte a ti mismo" });
 
     const { data: existing } = await supabase
@@ -384,10 +385,11 @@ app.post("/api/amistad/solicitar", async (req, res) => {
   }
 });
 
-app.put("/api/amistad/responder", async (req, res) => {
+app.put("/api/amistad/responder", requireAuth, async (req, res) => {
   try {
-    const { friendship_id, status, usuario_id } = req.body;
-    if (!friendship_id || !status || !usuario_id) return res.status(400).json({ error: "Faltan datos" });
+    const usuario_id = req.userId;
+    const { friendship_id, status } = req.body;
+    if (!friendship_id || !status) return res.status(400).json({ error: "Faltan datos" });
 
     const { data, error } = await supabase
       .from("friendships")
@@ -511,10 +513,10 @@ app.get("/api/prendas/amigo/:amigo_id", async (req, res) => {
 /* ─────────────────────────────────────
    📸 SUBIR PRENDA / OUTFIT
 ───────────────────────────────────── */
-app.post("/api/subir-prenda", aiLimiter, upload.single("imagen"), async (req, res) => {
+app.post("/api/subir-prenda", requireAuth, aiLimiter, upload.single("imagen"), async (req, res) => {
   try {
-    const { usuario_id, genero = "unisex", tipo = "prenda", imagen_url } = req.body;
-    if (!usuario_id) return res.status(400).json({ error: "Falta usuario_id" });
+    const usuario_id = req.userId;
+    const { genero = "unisex", tipo = "prenda", imagen_url } = req.body;
     if (!req.file && !imagen_url) return res.status(400).json({ error: "No se envió imagen" });
 
     let imagenOriginalUrl = imagen_url;
@@ -566,7 +568,7 @@ Reglas estrictas:
 - Para el tipo: usa únicamente: calzado, parte superior, parte inferior, accesorio, abrigo.
 - Sudaderas, hoodies, chaquetas, chamarras, blazers, sacos → tipo SIEMPRE "abrigo".`,
             },
-            { type: "image_url", image_url: { url: imagenOriginalUrl, detail: "high" } },
+            { type: "image_url", image_url: { url: imagenOriginalUrl, detail: "low" } },
           ],
         }],
         temperature: 0,
@@ -621,7 +623,7 @@ Analiza este outfit y devuelve SOLO este JSON:
 }
 Reglas: colores específicos, nombres correctos, tipos: calzado/parte superior/parte inferior/accesorio/abrigo. Incluye TODAS las prendas visibles.`,
             },
-            { type: "image_url", image_url: { url: imagenOriginalUrl, detail: "high" } },
+            { type: "image_url", image_url: { url: imagenOriginalUrl, detail: "low" } },
           ],
         }],
         temperature: 0,
@@ -658,10 +660,10 @@ Reglas: colores específicos, nombres correctos, tipos: calzado/parte superior/p
 /* ─────────────────────────────────────
    📋 OBTENER PRENDAS
 ───────────────────────────────────── */
-app.get("/api/prendas", async (req, res) => {
+app.get("/api/prendas", requireAuth, async (req, res) => {
   try {
-    const { usuario_id, tipo } = req.query;
-    if (!usuario_id) return res.status(400).json({ error: "Falta usuario_id" });
+    const usuario_id = req.userId;
+    const { tipo } = req.query;
 
     // Cache solo cuando se piden todas (sin filtro de tipo)
     if (!tipo || tipo === "todos") {
@@ -704,10 +706,11 @@ app.delete("/api/prendas/:id", requireAuth, async (req, res) => {
 /* ─────────────────────────────────────
    👗 FASHION IA
 ───────────────────────────────────── */
-app.post("/api/fashion", aiLimiter, async (req, res) => {
+app.post("/api/fashion", requireAuth, aiLimiter, async (req, res) => {
   try {
-    const { usuario_id, mensaje, historial = [], outfit_ids_anteriores = [] } = req.body;
-    if (!usuario_id || !mensaje) return res.status(400).json({ error: "Faltan datos" });
+    const usuario_id = req.userId;
+    const { mensaje, historial = [], outfit_ids_anteriores = [], clima } = req.body;
+    if (!mensaje) return res.status(400).json({ error: "Faltan datos" });
 
     let prendas = getCachedPrendas(usuario_id);
     if (!prendas) {
@@ -750,6 +753,10 @@ app.post("/api/fashion", aiLimiter, async (req, res) => {
     const historialTexto = historial.length > 0
       ? "\n\nHISTORIAL DE CONVERSACIÓN:\n" +
         historial.map((h) => `${h.role === "user" ? "Usuario" : "Asistente"}: ${h.text}`).join("\n")
+      : "";
+
+    const contextoClima = clima
+      ? `\n\nCLIMA ACTUAL: ${clima}\nAdapta el outfit a estas condiciones: sugiere abrigo si hace frío o llueve, telas ligeras si hace calor, impermeables si llueve, etc.`
       : "";
 
     const ai = await openai.chat.completions.create({
@@ -820,7 +827,7 @@ Devuelve SIEMPRE y ÚNICAMENTE este JSON exacto sin ningún texto antes ni despu
         },
         {
           role: "user",
-          content: `${contextoPrendas}${contextoOutfits}${contextoActual}${historialTexto}\n\nMensaje del usuario: ${mensaje}`,
+          content: `${contextoPrendas}${contextoOutfits}${contextoActual}${contextoClima}${historialTexto}\n\nMensaje del usuario: ${mensaje}`,
         },
       ],
       max_tokens: 800,
@@ -867,6 +874,43 @@ Devuelve SIEMPRE y ÚNICAMENTE este JSON exacto sin ningún texto antes ni despu
 });
 
 /* ─────────────────────────────────────
+   📊 ESTADÍSTICAS — recomendaciones de compra con IA
+───────────────────────────────────────── */
+app.post("/api/recomendaciones-compra", requireAuth, async (req, res) => {
+  try {
+    const usuario_id = req.userId;
+
+    let prendas = getCachedPrendas(usuario_id);
+    if (!prendas) {
+      const { data, error } = await supabase
+        .from("prendas").select("*").eq("usuario_id", usuario_id).eq("tipo", "prenda");
+      if (error) throw error;
+      prendas = data || [];
+    }
+    const sueltas = prendas.filter(p => p.tipo === "prenda");
+    if (sueltas.length === 0) {
+      return res.json({ recomendaciones: ["Sube tus primeras prendas para recibir sugerencias"] });
+    }
+
+    const lista = sueltas.map(p => p.descripcion).join("\n");
+    const ai = await openai.chat.completions.create({
+      model: MODEL,
+      messages: [{
+        role: "user",
+        content: `Analiza este closet y dame exactamente 3 recomendaciones MUY cortas (máx 10 palabras cada una) de prendas que debería comprar para completarlo o mejorar sus combinaciones. Solo el nombre de la prenda/sugerencia, sin explicación larga.\n\nCloset:\n${lista}\n\nDevuelve SOLO este JSON: {"recomendaciones":["...","...","..."]}`,
+      }],
+      temperature: 0.7,
+      max_tokens: 150,
+    });
+    const parsed = safeParseJSON(ai.choices[0].message.content);
+    res.json({ recomendaciones: parsed?.recomendaciones || [] });
+  } catch (err) {
+    console.error("📊 recomendaciones:", err.message);
+    res.status(500).json({ recomendaciones: [] });
+  }
+});
+
+/* ─────────────────────────────────────
    🔢 HELPER — enrich posts (Fix 1: evita N+1 queries)
    3 queries totales sin importar cuántos posts haya
 ───────────────────────────────────── */
@@ -901,10 +945,10 @@ async function enrichPosts(posts, postIds, viewerUserId) {
 /* ─────────────────────────────────────
    📸 POSTS — FEED
 ───────────────────────────────────── */
-app.post("/api/posts", upload.single("imagen"), async (req, res) => {
+app.post("/api/posts", requireAuth, upload.single("imagen"), async (req, res) => {
   try {
-    const { usuario_id, descripcion, prendas } = req.body;
-    if (!usuario_id) return res.status(400).json({ error: "Falta usuario_id" });
+    const usuario_id = req.userId;
+    const { descripcion, prendas } = req.body;
     if (!req.file) return res.status(400).json({ error: "Falta imagen" });
 
     const buffer = await fs.promises.readFile(req.file.path);
@@ -937,10 +981,11 @@ app.post("/api/posts", upload.single("imagen"), async (req, res) => {
   }
 });
 
-app.get("/api/feed", async (req, res) => {
+app.get("/api/feed", requireAuth, async (req, res) => {
   try {
-    const { usuario_id } = req.query;
-    if (!usuario_id) return res.status(400).json({ error: "Falta usuario_id" });
+    const usuario_id = req.userId;
+    const { before, limit: rawLimit } = req.query;
+    const PAGE_SIZE = Math.min(parseInt(rawLimit) || 20, 50);
 
     const { data: amistades } = await supabase
       .from("friendships")
@@ -953,18 +998,26 @@ app.get("/api/feed", async (req, res) => {
     );
     const todosIds = [usuario_id, ...amigoIds];
 
-    const { data: posts, error } = await supabase
+    let query = supabase
       .from("posts")
       .select(`id, imagen_url, descripcion, prendas, created_at, usuario_id, profile:usuario_id(id, username, nombre, avatar_url)`)
       .in("usuario_id", todosIds)
       .order("created_at", { ascending: false })
-      .limit(50);
+      .limit(PAGE_SIZE + 1);
+
+    if (before) query = query.lt("created_at", before);
+
+    const { data: posts, error } = await query;
     if (error) throw error;
 
-    const postIds = (posts || []).map((p) => p.id);
-    const postsConData = postIds.length === 0 ? [] : await enrichPosts(posts, postIds, usuario_id);
+    const hasMore = (posts || []).length > PAGE_SIZE;
+    const page = hasMore ? posts.slice(0, PAGE_SIZE) : (posts || []);
+    const nextCursor = hasMore ? page[page.length - 1].created_at : null;
 
-    res.json(postsConData);
+    const postIds = page.map((p) => p.id);
+    const postsConData = postIds.length === 0 ? [] : await enrichPosts(page, postIds, usuario_id);
+
+    res.json({ posts: postsConData, nextCursor });
   } catch (err) {
     console.error("🔥 feed:", err.message);
     res.status(500).json({ error: err.message });
@@ -1007,10 +1060,11 @@ app.delete("/api/posts/:id", requireAuth, async (req, res) => {
 /* ─────────────────────────────────────
    ❤️ LIKES (con notificación)
 ───────────────────────────────────── */
-app.post("/api/likes", async (req, res) => {
+app.post("/api/likes", requireAuth, async (req, res) => {
   try {
-    const { post_id, usuario_id } = req.body;
-    if (!post_id || !usuario_id) return res.status(400).json({ error: "Faltan datos" });
+    const usuario_id = req.userId;
+    const { post_id } = req.body;
+    if (!post_id) return res.status(400).json({ error: "Faltan datos" });
 
     const { data: existing } = await supabase
       .from("likes").select("id").eq("post_id", post_id).eq("usuario_id", usuario_id).single();
@@ -1060,10 +1114,11 @@ app.get("/api/comments/:post_id", async (req, res) => {
   }
 });
 
-app.post("/api/comments", async (req, res) => {
+app.post("/api/comments", requireAuth, async (req, res) => {
   try {
-    const { post_id, usuario_id, texto } = req.body;
-    if (!post_id || !usuario_id || !texto?.trim()) return res.status(400).json({ error: "Faltan datos" });
+    const usuario_id = req.userId;
+    const { post_id, texto } = req.body;
+    if (!post_id || !texto?.trim()) return res.status(400).json({ error: "Faltan datos" });
 
     const { data, error } = await supabase
       .from("comments")
@@ -1090,9 +1145,12 @@ app.post("/api/comments", async (req, res) => {
   }
 });
 
-app.delete("/api/comments/:id", async (req, res) => {
+app.delete("/api/comments/:id", requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
+    const { data: comment } = await supabase.from("comments").select("usuario_id").eq("id", id).single();
+    if (!comment) return res.status(404).json({ error: "Comentario no encontrado" });
+    if (comment.usuario_id !== req.userId) return res.status(403).json({ error: "Sin permiso" });
     const { error } = await supabase.from("comments").delete().eq("id", id);
     if (error) throw error;
     res.json({ mensaje: "🗑️ Comentario eliminado" });
@@ -1105,10 +1163,9 @@ app.delete("/api/comments/:id", async (req, res) => {
 /* ─────────────────────────────────────
    🌟 WISHLIST
 ───────────────────────────────────── */
-app.get("/api/wishlist", async (req, res) => {
+app.get("/api/wishlist", requireAuth, async (req, res) => {
   try {
-    const { usuario_id } = req.query;
-    if (!usuario_id) return res.status(400).json({ error: "Falta usuario_id" });
+    const usuario_id = req.userId;
     const { data, error } = await supabase
       .from("wishlist")
       .select(`id, imagen_url, descripcion, created_at, post_id,
@@ -1122,10 +1179,11 @@ app.get("/api/wishlist", async (req, res) => {
   }
 });
 
-app.post("/api/wishlist", async (req, res) => {
+app.post("/api/wishlist", requireAuth, async (req, res) => {
   try {
-    const { usuario_id, post_id, imagen_url, descripcion } = req.body;
-    if (!usuario_id || !post_id) return res.status(400).json({ error: "Faltan datos" });
+    const usuario_id = req.userId;
+    const { post_id, imagen_url, descripcion } = req.body;
+    if (!post_id) return res.status(400).json({ error: "Faltan datos" });
 
     const { data: existing } = await supabase
       .from("wishlist").select("id").eq("usuario_id", usuario_id).eq("post_id", post_id).single();
@@ -1143,9 +1201,12 @@ app.post("/api/wishlist", async (req, res) => {
   }
 });
 
-app.delete("/api/wishlist/:id", async (req, res) => {
+app.delete("/api/wishlist/:id", requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
+    const { data: item } = await supabase.from("wishlist").select("usuario_id").eq("id", id).single();
+    if (!item) return res.status(404).json({ error: "No encontrado" });
+    if (item.usuario_id !== req.userId) return res.status(403).json({ error: "Sin permiso" });
     const { error } = await supabase.from("wishlist").delete().eq("id", id);
     if (error) throw error;
     res.json({ mensaje: "🗑️ Eliminado de wishlist" });
@@ -1200,15 +1261,12 @@ app.get("/api/notificaciones", async (req, res) => {
   }
 });
 
-app.put("/api/notificaciones/leer", async (req, res) => {
+app.put("/api/notificaciones/leer", requireAuth, async (req, res) => {
   try {
-    const { usuario_id } = req.body;
-    if (!usuario_id) return res.status(400).json({ error: "Falta usuario_id" });
-
     const { error } = await supabase
       .from("notifications")
       .update({ leida: true })
-      .eq("usuario_id", usuario_id)
+      .eq("usuario_id", req.userId)
       .eq("leida", false);
 
     if (error) throw error;
