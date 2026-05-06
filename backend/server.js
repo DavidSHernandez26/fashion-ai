@@ -67,6 +67,18 @@ async function requireAuth(req, res, next) {
 const _prendasCache = new Map(); // uid → { data, ts }
 const PRENDAS_TTL   = 3 * 60 * 1000; // 3 minutos
 
+const _usernameCache = new Map(); // uid → { username, ts }
+const USERNAME_TTL   = 10 * 60 * 1000; // 10 minutos (usernames cambian poco)
+
+async function getUsername(uid) {
+  const cached = _usernameCache.get(uid);
+  if (cached && Date.now() - cached.ts < USERNAME_TTL) return cached.username;
+  const { data } = await supabase.from("profiles").select("username").eq("id", uid).single();
+  const username = data?.username || "alguien";
+  _usernameCache.set(uid, { username, ts: Date.now() });
+  return username;
+}
+
 function getCachedPrendas(uid) {
   const e = _prendasCache.get(uid);
   if (e && Date.now() - e.ts < PRENDAS_TTL) return e.data;
@@ -374,14 +386,13 @@ app.post("/api/amistad/solicitar", requireAuth, async (req, res) => {
       .select().single();
     if (error) throw error;
 
-    const { data: fromProfile } = await supabase
-      .from("profiles").select("username").eq("id", requester_id).single();
+    const username = await getUsername(requester_id);
 
     await crearNotificacion({
       usuario_id: addressee_id,
       from_usuario_id: requester_id,
       tipo: "solicitud",
-      mensaje: `@${fromProfile?.username || "alguien"} te envió una solicitud de amistad`,
+      mensaje: `@${username} te envió una solicitud de amistad`,
     });
 
     res.json({ mensaje: "✅ Solicitud enviada", data });
@@ -406,13 +417,12 @@ app.put("/api/amistad/responder", requireAuth, async (req, res) => {
     if (error) throw error;
 
     if (status === "accepted") {
-      const { data: fromProfile } = await supabase
-        .from("profiles").select("username").eq("id", usuario_id).single();
+      const username = await getUsername(usuario_id);
       await crearNotificacion({
         usuario_id: data.requester_id,
         from_usuario_id: usuario_id,
         tipo: "aceptado",
-        mensaje: `@${fromProfile?.username || "alguien"} aceptó tu solicitud de amistad 🎉`,
+        mensaje: `@${username} aceptó tu solicitud de amistad 🎉`,
       });
     }
 
@@ -960,7 +970,11 @@ app.post("/api/posts", requireAuth, upload.single("imagen"), async (req, res) =>
     if (!req.file) return res.status(400).json({ error: "Falta imagen" });
 
     const buffer = await fs.promises.readFile(req.file.path);
-    const rotated = await sharp(buffer).rotate().toBuffer();
+    const rotated = await sharp(buffer)
+      .rotate()
+      .resize(1080, 1080, { fit: "inside", withoutEnlargement: true })
+      .jpeg({ quality: 80 })
+      .toBuffer();
 
     const fileName = `posts/${usuario_id}_${Date.now()}.jpg`;
     const { error: uploadError } = await supabase.storage
@@ -1084,15 +1098,17 @@ app.post("/api/likes", requireAuth, async (req, res) => {
 
     await supabase.from("likes").insert([{ post_id, usuario_id }]);
 
-    const { data: post } = await supabase.from("posts").select("usuario_id").eq("id", post_id).single();
-    const { data: fromProfile } = await supabase.from("profiles").select("username").eq("id", usuario_id).single();
+    const [{ data: post }, username] = await Promise.all([
+      supabase.from("posts").select("usuario_id").eq("id", post_id).single(),
+      getUsername(usuario_id),
+    ]);
 
     if (post?.usuario_id) {
       await crearNotificacion({
         usuario_id: post.usuario_id,
         from_usuario_id: usuario_id,
         tipo: "like",
-        mensaje: `@${fromProfile?.username || "alguien"} le dio ❤️ a tu outfit`,
+        mensaje: `@${username} le dio ❤️ a tu outfit`,
         post_id,
       });
     }
