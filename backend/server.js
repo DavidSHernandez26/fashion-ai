@@ -35,7 +35,7 @@ const aiLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-const upload = multer({ dest: "uploads/" });
+const upload = multer({ dest: "uploads/", limits: { fileSize: 10 * 1024 * 1024 } });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -75,6 +75,12 @@ function getCachedPrendas(uid) {
 }
 
 function setCachedPrendas(uid, data) {
+  if (_prendasCache.size >= 200) {
+    const oldest = [..._prendasCache.entries()].reduce(
+      (min, e) => (e[1].ts < min[1].ts ? e : min)
+    );
+    _prendasCache.delete(oldest[0]);
+  }
   _prendasCache.set(uid, { data, ts: Date.now() });
 }
 
@@ -711,6 +717,8 @@ app.post("/api/fashion", requireAuth, aiLimiter, async (req, res) => {
     const usuario_id = req.userId;
     const { mensaje, historial = [], outfit_ids_anteriores = [], clima } = req.body;
     if (!mensaje) return res.status(400).json({ error: "Faltan datos" });
+    if (!Array.isArray(historial) || !Array.isArray(outfit_ids_anteriores))
+      return res.status(400).json({ error: "Formato inválido" });
 
     let prendas = getCachedPrendas(usuario_id);
     if (!prendas) {
@@ -1105,7 +1113,7 @@ app.get("/api/comments/:post_id", async (req, res) => {
     const { data, error } = await supabase
       .from("comments")
       .select(`id, texto, created_at, usuario_id, profile:usuario_id(id, username, nombre, avatar_url)`)
-      .eq("post_id", post_id).order("created_at", { ascending: true });
+      .eq("post_id", post_id).order("created_at", { ascending: true }).limit(100);
     if (error) throw error;
     res.json(data || []);
   } catch (err) {
