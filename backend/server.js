@@ -20,7 +20,7 @@ app.use(helmet({
   contentSecurityPolicy: false,
 }));
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || "*",
+  origin: process.env.CORS_ORIGIN,
   methods: ["GET", "POST", "PUT", "DELETE"],
   allowedHeaders: ["Content-Type", "Authorization"],
 }));
@@ -35,7 +35,20 @@ const aiLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-const upload = multer({ dest: "uploads/", limits: { fileSize: 10 * 1024 * 1024 } });
+const ALLOWED_MIMES = new Set(["image/jpeg","image/jpg","image/png","image/webp","image/gif","image/heic","image/heif"]);
+const upload = multer({
+  dest: "uploads/",
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    ALLOWED_MIMES.has(file.mimetype)
+      ? cb(null, true)
+      : cb(Object.assign(new Error("Tipo de archivo no permitido"), { status: 415 }));
+  },
+});
+
+async function cleanupFile(path) {
+  if (path) fs.unlink(path, () => {});
+}
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -100,25 +113,66 @@ function invalidatePrendasCache(uid) {
   _prendasCache.delete(uid);
 }
 
-function normalizarTipo(descripcion = "") {
+function normalizarTipo(descripcion = "", metaIa = {}) {
+  // Prioridad: metadata_ia.tipo > tipo al final de la descripción
+  const tipoMeta = (metaIa?.tipo || "").toLowerCase().trim();
   const d = descripcion.toLowerCase();
   const parts = d.split(" - ");
-  const tipoAlmacenado = parts[parts.length - 1]?.trim() || "otro";
+  const tipoDesc = parts[parts.length - 1]?.trim() || "";
   const nombreParte = parts.slice(0, -1).join(" ");
-  // Sudaderas y hoodies van en la misma capa que chaquetas → abrigo
-  if (
-    tipoAlmacenado === "parte superior" &&
-    (nombreParte.includes("sudadera") || nombreParte.includes("hoodie") || nombreParte.includes("sweatshirt"))
-  ) {
-    return "abrigo";
-  }
-  return tipoAlmacenado;
+  const tipo = tipoMeta || tipoDesc || "otro";
+
+  // Vestido / jumpsuit / mono completo — categoría propia
+  if (tipo === "vestido" || /vestido|dress|jumpsuit|mono completo|enterizo/.test(nombreParte)) return "vestido";
+
+  // Sudaderas y hoodies van con abrigo
+  if (tipo === "parte superior" && /sudadera|hoodie|sweatshirt/.test(nombreParte)) return "abrigo";
+
+  return tipo;
+}
+
+function subtipoAccesorio(p) {
+  const texto = ((p.metadata_ia?.nombre || '') + ' ' + (p.descripcion || '')).toLowerCase();
+  if (/gorra|cap|sombrero|boina|snapback|beanie/.test(texto))           return 'gorra';
+  if (/cintur[oó]n|belt|correa/.test(texto))                            return 'cinturon';
+  if (/reloj|watch/.test(texto))                                        return 'reloj';
+  if (/manilla|pulsera|brazalete/.test(texto))                          return 'manilla';
+  if (/collar|cadena|colgante|necklace/.test(texto))                    return 'collar';
+  if (/bandolera|crossbody/.test(texto))                                return 'bandolera';
+  if (/bolso|cartera|tote|clutch|maletín/.test(texto))                  return 'bolso';
+  if (/mochila|backpack/.test(texto))                                   return 'mochila';
+  if (/lentes|gafas|anteojos|sunglasses/.test(texto))                   return 'lentes';
+  if (/bufanda|pa[ñn]uelo|scarf/.test(texto))                           return 'bufanda';
+  // fallback: primer token del nombre en metadata_ia
+  return (p.metadata_ia?.nombre || 'misc').toLowerCase().split(' ')[0];
 }
 
 function deduplicarPorTipo(prendas) {
+  const tipos = prendas.map(p => normalizarTipo(p.descripcion, p.metadata_ia));
+  const hayVestido = tipos.includes("vestido");
+
   const seen = new Map();
-  for (const p of [...prendas].sort(() => Math.random() - 0.5)) {
-    const tipo = normalizarTipo(p.descripcion);
+  const seenAccesorios = new Set();
+  let accesoriosCount = 0;
+
+  for (let i = 0; i < prendas.length; i++) {
+    const p    = prendas[i];
+    const tipo = tipos[i];
+
+    // Con vestido: no incluir parte superior ni parte inferior
+    if (hayVestido && (tipo === "parte superior" || tipo === "parte inferior")) continue;
+
+    // Accesorios: máx 1 por sub-tipo (1 gorra, 1 cinturón, 1 reloj…)
+    if (tipo === "accesorio") {
+      const sub = subtipoAccesorio(p);
+      if (!seenAccesorios.has(sub)) {
+        seenAccesorios.add(sub);
+        seen.set(`accesorio_${accesoriosCount}`, p);
+        accesoriosCount++;
+      }
+      continue;
+    }
+
     if (!seen.has(tipo)) seen.set(tipo, p);
   }
   return [...seen.values()];
@@ -337,10 +391,10 @@ app.put("/api/perfil", requireAuth, async (req, res) => {
   }
 });
 
-app.post("/api/perfil/avatar", upload.single("avatar"), async (req, res) => {
+app.post("/api/perfil/avatar", requireAuth, upload.single("avatar"), async (req, res) => {
   try {
-    const { usuario_id } = req.body;
-    if (!usuario_id || !req.file) return res.status(400).json({ error: "Faltan datos" });
+    const usuario_id = req.userId;
+    if (!req.file) return res.status(400).json({ error: "Falta imagen" });
 
     const buffer = await fs.promises.readFile(req.file.path);
     const fileName = `avatars/${usuario_id}_${Date.now()}.jpg`;
@@ -433,10 +487,9 @@ app.put("/api/amistad/responder", requireAuth, async (req, res) => {
   }
 });
 
-app.get("/api/amistad/solicitudes", async (req, res) => {
+app.get("/api/amistad/solicitudes", requireAuth, async (req, res) => {
   try {
-    const { usuario_id } = req.query;
-    if (!usuario_id) return res.status(400).json({ error: "Falta usuario_id" });
+    const usuario_id = req.userId;
     const { data, error } = await supabase
       .from("friendships")
       .select(`id, status, created_at, requester:requester_id(id, username, nombre, avatar_url)`)
@@ -449,10 +502,9 @@ app.get("/api/amistad/solicitudes", async (req, res) => {
   }
 });
 
-app.get("/api/amistad/amigos", async (req, res) => {
+app.get("/api/amistad/amigos", requireAuth, async (req, res) => {
   try {
-    const { usuario_id } = req.query;
-    if (!usuario_id) return res.status(400).json({ error: "Falta usuario_id" });
+    const usuario_id = req.query.usuario_id || req.userId;
     const { data, error } = await supabase
       .from("friendships")
       .select(`id, requester:requester_id(id, username, nombre, avatar_url), addressee:addressee_id(id, username, nombre, avatar_url)`)
@@ -571,27 +623,49 @@ app.post("/api/subir-prenda", requireAuth, aiLimiter, upload.single("imagen"), a
             {
               type: "text",
               text: `Eres un experto en moda y retail con visión detallada.
-Analiza esta prenda con mucho cuidado y devuelve SOLO este JSON:
+Analiza la imagen. Considera prenda válida cualquier ropa, calzado o accesorio de moda, tanto si aparece sola como si la lleva puesta una persona.
+Solo devuelve {"tipo":"no_prenda"} si la imagen claramente NO tiene ninguna prenda: por ejemplo una foto de comida, paisaje, animal o texto.
+En caso de duda, analiza la prenda más visible.
+
+Devuelve SOLO este JSON (sin texto extra):
 {
   "nombre": "tenis",
   "color": "café/marrón",
-  "tipo": "calzado"
+  "tipo": "calzado",
+  "material": "cuero sintético",
+  "temporada": "todo el año",
+  "estilo": "casual",
+  "patron": "liso",
+  "fit": "regular"
 }
-Reglas estrictas:
-- Para el color: sé muy específico (café, marrón, beige, crema, burdeos, mostaza, camel, terracota, verde oliva, azul marino, etc). NO uses colores genéricos.
-- Si hay varios colores menciona el principal: "negro con blanco".
-- Para el nombre: usa el término correcto (tenis, botines, mocasines, chaqueta, sudadera, hoodie, polo, blusa, etc).
-- Para el tipo: usa únicamente: calzado, parte superior, parte inferior, accesorio, abrigo.
-- Sudaderas, hoodies, chaquetas, chamarras, blazers, sacos → tipo SIEMPRE "abrigo".`,
+Reglas para cada campo:
+- color: muy específico (café, marrón, beige, crema, burdeos, mostaza, camel, terracota, verde oliva, azul marino). Principal si hay varios: "negro con blanco".
+- nombre: término correcto (tenis, botines, mocasines, chaqueta, sudadera, hoodie, polo, blusa, etc).
+- tipo: SOLO uno de: calzado, parte superior, parte inferior, accesorio, abrigo, vestido.
+  vestido = vestidos, monos completos, jumpsuits, enterizos (prendas que cubren torso y piernas en una sola pieza).
+  abrigo = chaquetas, sudaderas, hoodies, blazers, sacos, abrigos.
+  accesorio = gorras, bolsos, bandoleras, relojes, manillas, collares, cinturones, lentes, bufandas.
+- material: algodón, poliéster, lino, denim, cuero, lana, seda, sintético, punto, etc.
+- temporada: verano, invierno, primavera/otoño, todo el año.
+- estilo: casual, formal, deportivo, elegante, streetwear, bohemio, minimalista, etc.
+- patron: liso, rayas, cuadros, floral, estampado, camuflaje, tie-dye, animal print, etc.
+- fit: slim, regular, oversized, ajustado, holgado, etc.`,
             },
             { type: "image_url", image_url: { url: imagenOriginalUrl, detail: "low" } },
           ],
         }],
         temperature: 0,
-        max_tokens: 200,
+        max_tokens: 300,
       });
 
       const parsed = safeParseJSON(ai.choices[0].message.content);
+
+      // Si la IA detecta que no es una prenda, eliminar de storage y rechazar
+      if (parsed?.tipo === "no_prenda") {
+        await supabase.storage.from("prendas").remove([cleanName]);
+        return res.status(422).json({ error: "La imagen no parece contener una prenda de ropa, calzado o accesorio." });
+      }
+
       const nombre = parsed?.nombre || "prenda";
       const color = parsed?.color || "?";
       const tipoPrenda = parsed?.tipo || "?";
@@ -720,8 +794,161 @@ app.delete("/api/prendas/:id", requireAuth, async (req, res) => {
 });
 
 /* ─────────────────────────────────────
+   🔄 RE-ANÁLISIS DE PRENDAS EXISTENTES
+   Enriquece metadata_ia con material, temporada, estilo, patrón, fit
+───────────────────────────────────── */
+app.post("/api/prendas/reanalizar", requireAuth, aiLimiter, async (req, res) => {
+  try {
+    const usuario_id = req.userId;
+    const { data: prendas, error } = await supabase
+      .from("prendas")
+      .select("id, imagen_url, descripcion, metadata_ia")
+      .eq("usuario_id", usuario_id)
+      .eq("tipo", "prenda");
+
+    if (error) throw error;
+    if (!prendas || prendas.length === 0)
+      return res.json({ mensaje: "No hay prendas para analizar.", actualizadas: 0 });
+
+    // Solo prendas que no tienen los campos nuevos
+    const pendientes = prendas.filter(p => {
+      const m = p.metadata_ia || {};
+      return !m.material || !m.temporada || !m.estilo || !m.patron || !m.fit;
+    });
+
+    if (pendientes.length === 0)
+      return res.json({ mensaje: "Todas las prendas ya tienen metadata completa.", actualizadas: 0 });
+
+    let actualizadas = 0;
+    const LOTE = 5; // de a 5 para no saturar la API
+
+    for (let i = 0; i < pendientes.length; i += LOTE) {
+      const lote = pendientes.slice(i, i + LOTE);
+      await Promise.allSettled(lote.map(async (prenda) => {
+        try {
+          const ai = await openai.chat.completions.create({
+            model: MODEL,
+            messages: [{
+              role: "user",
+              content: [
+                {
+                  type: "text",
+                  text: `Analiza esta prenda y devuelve SOLO este JSON:
+{
+  "nombre": "...",
+  "color": "...",
+  "tipo": "...",
+  "material": "...",
+  "temporada": "...",
+  "estilo": "...",
+  "patron": "...",
+  "fit": "..."
+}
+tipo: calzado | parte superior | parte inferior | accesorio | abrigo | vestido
+  abrigo = chaquetas/sudaderas/hoodies/blazers
+  vestido = vestidos/monos/jumpsuits/enterizos
+  accesorio = gorras/bolsos/relojes/manillas/collares/cinturones/lentes
+material: algodón, denim, cuero, lana, lino, poliéster, punto, sintético, seda...
+temporada: verano | invierno | primavera/otoño | todo el año
+estilo: casual | formal | deportivo | streetwear | elegante | bohemio | minimalista
+patron: liso | rayas | cuadros | floral | estampado | camuflaje | animal print
+fit: slim | regular | oversized | ajustado | holgado`,
+                },
+                { type: "image_url", image_url: { url: prenda.imagen_url, detail: "low" } },
+              ],
+            }],
+            temperature: 0,
+            max_tokens: 300,
+          });
+
+          const parsed = safeParseJSON(ai.choices[0].message.content);
+          if (!parsed) return;
+
+          const metaActual = prenda.metadata_ia || {};
+          const metaNueva = {
+            nombre:    parsed.nombre    || metaActual.nombre    || "",
+            color:     parsed.color     || metaActual.color     || "",
+            tipo:      parsed.tipo      || metaActual.tipo      || "",
+            material:  parsed.material  || metaActual.material  || "",
+            temporada: parsed.temporada || metaActual.temporada || "",
+            estilo:    parsed.estilo    || metaActual.estilo    || "",
+            patron:    parsed.patron    || metaActual.patron    || "",
+            fit:       parsed.fit       || metaActual.fit       || "",
+          };
+
+          const nombre = metaNueva.nombre || prenda.descripcion.split(" (")[0];
+          const color  = metaNueva.color  || prenda.descripcion.match(/\(([^)]+)\)/)?.[1] || "?";
+          const tipo   = metaNueva.tipo   || prenda.descripcion.split(" - ").pop() || "?";
+
+          await supabase.from("prendas").update({
+            metadata_ia: metaNueva,
+            descripcion: `${nombre} (${color}) - ${tipo}`,
+          }).eq("id", prenda.id);
+
+          actualizadas++;
+        } catch (e) {
+          console.error(`🔥 reanalizar prenda ${prenda.id}:`, e.message);
+        }
+      }));
+    }
+
+    invalidatePrendasCache(usuario_id);
+    res.json({ mensaje: `✅ ${actualizadas} de ${pendientes.length} prendas actualizadas.`, actualizadas, total: pendientes.length });
+  } catch (err) {
+    console.error("🔥 reanalizar:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* ─────────────────────────────────────
    👗 FASHION IA
 ───────────────────────────────────── */
+
+/* Genera contexto climático obligatorio y accionable para la IA */
+function generarContextoClima(c) {
+  if (!c || typeof c !== "object") {
+    return `\n\nCLIMA: No disponible. Aplica igual criterio climático usando la metadata de temporada/material de cada prenda. Si hay prendas de abrigo disponibles, priorízalas ante la duda.`;
+  }
+
+  const { temp, feels, wind = 0, city = "tu ciudad", label = "", rain_prob = 0 } = c;
+  const sensacion = feels ?? temp;
+
+  let capaRegla, telas, urgencia;
+  if      (sensacion < 5)  { urgencia = "🥶 FRÍO EXTREMO";  capaRegla = "ABRIGO GRUESO OBLIGATORIO — sin él el outfit es inadecuado para salir";   telas = "lana, polar, plumas, pana, denim grueso"; }
+  else if (sensacion < 12) { urgencia = "🧥 FRÍO";          capaRegla = "CHAQUETA O ABRIGO OBLIGATORIO — debe aparecer en outfit_ids si existe";    telas = "lana, algodón grueso, punto, denim"; }
+  else if (sensacion < 18) { urgencia = "🌤 FRESCO";        capaRegla = "Capa media RECOMENDADA: suéter, cardigan o chaqueta ligera";               telas = "algodón, denim ligero, punto fino"; }
+  else if (sensacion < 25) { urgencia = "🌿 TEMPLADO";      capaRegla = "Sin capas pesadas — temperatura agradable, prioriza comodidad";            telas = "algodón, mezclas ligeras, denim"; }
+  else                     { urgencia = "☀️ CALOR";          capaRegla = "Ropa ligera y transpirable OBLIGATORIA — NUNCA abrigos ni suéteres gruesos"; telas = "lino, algodón ligero, tejidos transpirables"; }
+
+  const lluviaLinea = rain_prob >= 40
+    ? `\n• Lluvia: ${rain_prob}% de probabilidad → incluye abrigo impermeable/capa resistente al agua si el closet lo tiene; EVITA lino, seda, ante/suede`
+    : "";
+  const vientoLinea = wind >= 25
+    ? `\n• Viento: ${wind} km/h → prioriza prendas con cierre completo o fit ajustado`
+    : "";
+
+  return `\n\n${urgencia} EN ${city.toUpperCase()} — REGLAS CLIMÁTICAS (NO NEGOCIABLES):
+• Temperatura: ${temp}°C · Sensación térmica: ${sensacion}°C · Condición: ${label}${lluviaLinea}${vientoLinea}
+• ${capaRegla}
+• Telas apropiadas para ${sensacion}°C: ${telas}
+
+⚠️ EL CLIMA ES PRIORIDAD ABSOLUTA: un outfit que ignora ${sensacion}°C de sensación térmica es incorrecto, sin importar qué tan bien combine visualmente.`;
+}
+
+/* Formatea una prenda con toda su metadata estructurada */
+function formatPrendaRica(p) {
+  const m = p.metadata_ia || {};
+  const partes = [`[ID:${p.id}] ${p.descripcion}`];
+  if (m.tipo)       partes.push(`  • tipo: ${m.tipo}`);
+  if (m.color)      partes.push(`  • color: ${m.color}`);
+  if (m.material)   partes.push(`  • material: ${m.material}`);
+  if (m.temporada)  partes.push(`  • temporada: ${m.temporada}`);
+  if (m.estilo)     partes.push(`  • estilo: ${m.estilo}`);
+  if (m.patron)     partes.push(`  • patrón: ${m.patron}`);
+  if (m.fit)        partes.push(`  • fit: ${m.fit}`);
+  return partes.join("\n");
+}
+
 app.post("/api/fashion", requireAuth, aiLimiter, async (req, res) => {
   try {
     const usuario_id = req.userId;
@@ -730,14 +957,29 @@ app.post("/api/fashion", requireAuth, aiLimiter, async (req, res) => {
     if (!Array.isArray(historial) || !Array.isArray(outfit_ids_anteriores))
       return res.status(400).json({ error: "Formato inválido" });
 
+    /* ── Carga en paralelo: prendas + perfil + calendario reciente ── */
     let prendas = getCachedPrendas(usuario_id);
+
+    const [prendasResult, perfilResult, calendarioResult] = await Promise.allSettled([
+      prendas
+        ? Promise.resolve({ data: prendas })
+        : supabase.from("prendas").select("*").eq("usuario_id", usuario_id).order("created_at", { ascending: false }),
+      supabase.from("profiles").select("nombre, bio, genero").eq("id", usuario_id).single(),
+      supabase.from("calendario")
+        .select("fecha, descripcion, metadata")
+        .eq("usuario_id", usuario_id)
+        .gte("fecha", (() => { const d = new Date(); d.setDate(d.getDate() - 14); return d.toISOString().split("T")[0]; })())
+        .order("fecha", { ascending: false })
+        .limit(10),
+    ]);
+
     if (!prendas) {
-      const { data, error } = await supabase
-        .from("prendas").select("*").eq("usuario_id", usuario_id).order("created_at", { ascending: false });
-      if (error) throw error;
-      prendas = data || [];
-      setCachedPrendas(usuario_id, prendas);
+      prendas = prendasResult.status === "fulfilled" ? (prendasResult.value.data || []) : [];
+      if (prendas.length) setCachedPrendas(usuario_id, prendas);
     }
+
+    const perfil = perfilResult.status === "fulfilled" ? perfilResult.value.data : null;
+    const calendarioReciente = calendarioResult.status === "fulfilled" ? (calendarioResult.value.data || []) : [];
 
     if (!prendas || prendas.length === 0) {
       return res.json({
@@ -749,32 +991,66 @@ app.post("/api/fashion", requireAuth, aiLimiter, async (req, res) => {
     const prendasSueltas = prendas.filter((p) => p.tipo === "prenda");
     const outfitsGuardados = prendas.filter((p) => p.tipo === "outfit");
 
+    /* ── Contexto 1: Prendas con metadata completa ── */
     const contextoPrendas = prendasSueltas.length > 0
-      ? "PRENDAS SUELTAS DISPONIBLES (formato: [ID] nombre (color) - tipo):\n" +
-        prendasSueltas.map((p) => `[ID:${p.id}] ${p.descripcion}`).join("\n")
+      ? "PRENDAS DISPONIBLES EN EL CLOSET:\n" +
+        prendasSueltas.map(formatPrendaRica).join("\n\n")
       : "No hay prendas sueltas disponibles.";
 
+    /* ── Contexto 2: Outfits guardados ── */
     const contextoOutfits = outfitsGuardados.length > 0
-      ? "\n\nOUTFITS GUARDADOS (solo referencia de estilo):\n" +
+      ? "\n\nOUTFITS GUARDADOS (referencia de estilo del usuario):\n" +
         outfitsGuardados.map((p) => {
           const lista = p.metadata_ia?.prendas?.map((x) => `${x.nombre} (${x.color})`).join(", ") || "";
           return `[ID:${p.id}] ${p.descripcion}${lista ? ` — incluye: ${lista}` : ""}`;
         }).join("\n")
       : "";
 
+    /* ── Contexto 3: Outfit actual en pantalla ── */
     const prendasActuales = prendasSueltas.filter((p) => outfit_ids_anteriores.includes(p.id));
     const contextoActual = prendasActuales.length > 0
       ? "\n\nOUTFIT ACTUAL EN PANTALLA:\n" +
-        prendasActuales.map((p) => `[ID:${p.id}] ${p.descripcion}`).join("\n")
+        prendasActuales.map(formatPrendaRica).join("\n\n")
       : "";
 
+    /* ── Contexto 4: Calendario — qué usó recientemente ── */
+    const IDS_RECIENTES = new Set();
+    const contextoCalendario = calendarioReciente.length > 0
+      ? "\n\nOUTFITS USADOS RECIENTEMENTE (últimos 14 días — EVITA repetir estas combinaciones):\n" +
+        calendarioReciente.map((e) => {
+          const ids = e.metadata?.outfit_ids || [];
+          ids.forEach(id => IDS_RECIENTES.add(id));
+          const prendNames = ids.length
+            ? prendasSueltas.filter(p => ids.includes(p.id)).map(p => p.descripcion.split(" - ")[0]).join(", ")
+            : e.descripcion || "outfit sin detalle";
+          return `• ${e.fecha}: ${prendNames}`;
+        }).join("\n")
+      : "";
+
+    /* ── Contexto 5: Perfil del usuario ── */
+    const contextoPerfil = perfil
+      ? (() => {
+          const partes = [];
+          if (perfil.nombre)  partes.push(`Nombre: ${perfil.nombre}`);
+          if (perfil.genero)  partes.push(`Género: ${perfil.genero}`);
+          if (perfil.bio)     partes.push(`Bio/Estilo personal: "${perfil.bio}"`);
+          return partes.length ? `\n\nPERFIL DEL USUARIO:\n${partes.join("\n")}` : "";
+        })()
+      : "";
+
+    /* ── Contexto 6: Historial de conversación ── */
     const historialTexto = historial.length > 0
       ? "\n\nHISTORIAL DE CONVERSACIÓN:\n" +
         historial.map((h) => `${h.role === "user" ? "Usuario" : "Asistente"}: ${h.text}`).join("\n")
       : "";
 
-    const contextoClima = clima
-      ? `\n\nCLIMA ACTUAL: ${clima}\nAdapta el outfit a estas condiciones: sugiere abrigo si hace frío o llueve, telas ligeras si hace calor, impermeables si llueve, etc.`
+    /* ── Contexto 7: Clima ── */
+    const contextoClima = generarContextoClima(clima);
+
+    /* ── Aviso de prendas usadas recientemente ── */
+    const prendas_usadas_ids = [...IDS_RECIENTES];
+    const avisoRepeticion = prendas_usadas_ids.length > 0
+      ? `\n\nADVERTENCIA DE REPETICIÓN: Los IDs [${prendas_usadas_ids.join(", ")}] fueron usados en los últimos 14 días. Prioriza prendas que NO estén en esa lista para generar variedad real.`
       : "";
 
     const ai = await openai.chat.completions.create({
@@ -782,74 +1058,107 @@ app.post("/api/fashion", requireAuth, aiLimiter, async (req, res) => {
       messages: [
         {
           role: "system",
-          content: `Eres un estilista personal experto con amplio conocimiento en teoría del color, tendencias de moda y combinación de prendas.
+          content: `Eres un estilista personal experto con conocimiento profundo de teoría del color, tendencias actuales y psicología de la moda.
 
-CONTEXTO DEL CLOSET:
-Las prendas tienen este formato: nombre (color) - tipo
-Tipos posibles: parte superior, parte inferior, calzado, accesorio, abrigo
+Tu misión: armar el outfit más inteligente posible usando EXACTAMENTE las prendas del closet del usuario. Conoces su estilo, lo que ha usado recientemente, y el contexto del día.
 
-REGLAS DE COMBINACIÓN:
+═══════════════════════════════════════
+REGLAS DE COMBINACIÓN
+═══════════════════════════════════════
 
-1. ESTRUCTURA DEL OUTFIT — selecciona EXACTAMENTE UNO por tipo, nunca repitas:
-   - 1 parte superior (OBLIGATORIO si hay disponibles)
-   - 1 parte inferior (OBLIGATORIO si hay disponibles)
-   - 1 calzado (OBLIGATORIO si hay disponible)
-   - 1 accesorio máximo (opcional, solo si complementa el look)
-   - 1 abrigo (opcional, solo si el usuario lo pide o la ocasión lo requiere)
-   - REGLA INQUEBRANTABLE: outfit_ids NUNCA puede tener 2 prendas del mismo tipo. Si hay 2 camisetas, elige solo 1.
-   - Sudaderas y chaquetas son el MISMO tipo (abrigo/capa exterior). Nunca incluyas ambas a la vez.
+1. ESTRUCTURA DEL OUTFIT — elige UNA de estas dos plantillas según el closet:
 
-2. TEORÍA DEL COLOR — aplica estas reglas al recomendar:
-   - Neutros (negro, blanco, beige, gris, camel, café) combinan con absolutamente todo
-   - Colores análogos (cercanos en el círculo cromático) crean looks armoniosos y cohesivos
-   - Colores complementarios (opuestos en el círculo) crean contraste elegante y dinámico
-   - Máximo 3 colores por outfit para no saturar visualmente
-   - Colores llamativos (rosa, morado, rojo, amarillo) funcionan mejor como pieza focal única, combinados con neutros
-   - Colores oscuros (negro, azul marino, café oscuro) son versátiles y elegantes
-   - El denim (azul) es neutro y combina con casi todo
+   ── PLANTILLA A: CLÁSICO (sin vestido) ──
+   • 1 parte superior — camiseta, camisa, polo, blusa (OBLIGATORIO)
+   • 1 parte inferior — pantalón, jean, short, falda (OBLIGATORIO)
+   • 1 calzado (OBLIGATORIO)
+   • 1 abrigo — chaqueta, sudadera, blazer (OBLIGATORIO si sensación < 18°C o lluvia ≥ 40%; omitir si > 25°C)
+   • accesorios — gorra, bandolera/bolso, reloj, manilla, collar, cinturón, lentes, bufanda (incluye TODOS los que tengas disponibles y que realmente aporten al look; sin límite)
 
-3. OCASIONES — adapta el outfit según lo que pida el usuario:
-   - Casual/diario: prendas cómodas, sneakers, colores relajados, accesorios simples
-   - Formal/oficina: prendas estructuradas, colores neutros o sobrios, menos accesorios
-   - Cita/salida nocturna: combinaciones más cuidadas, accesorios estratégicos, look pulido
-   - Sport/activo: funcionalidad + estilo, colores deportivos
-   - Si el usuario no especifica, deduce la ocasión por el tono de su mensaje
+   ── PLANTILLA B: VESTIDO / JUMPSUIT / MONO ──
+   • 1 vestido / jumpsuit / mono completo (reemplaza parte superior + inferior — NUNCA añadir pantalón ni camiseta)
+   • 1 calzado (OBLIGATORIO)
+   • 1 abrigo (OBLIGATORIO si sensación < 18°C; OPCIONAL si templado; OMITIR si > 25°C)
+   • accesorios (todos los disponibles que aporten — sin límite)
 
-4. EXCLUSIONES ABSOLUTAS:
-   - Si el usuario dice "sin X", "no quiero X", "quita X", esa prenda JAMÁS aparece en outfit_ids
-   - Esta regla es inquebrantable, no hay excepciones
+   REGLAS GLOBALES:
+   ✗ NUNCA mezclar plantillas (vestido + pantalón = error grave)
+   ✗ NUNCA 2 prendas del mismo tipo (ej: 2 abrigos)
+   ✗ Sudadera y chaqueta = mismo tipo (abrigo). Solo una.
+   ✓ Si no hay abrigo disponible y hace frío, díselo en la respuesta
+   ✓ Incluye accesorios siempre que existan en el closet y complementen el look
 
-5. CONTINUIDAD Y MEMORIA:
-   - Recuerda exactamente qué recomendaste antes en el historial
-   - Si el usuario pide un cambio, mantén las prendas que no mencionó y modifica solo lo pedido
-   - Si pide algo completamente nuevo, propón una combinación fresca diferente
+2. TEORÍA DEL COLOR:
+   • Neutros (negro, blanco, beige, gris, camel, marino) van con todo
+   • Análogos (colores cercanos en la rueda) = look armonioso
+   • Complementarios (opuestos) = contraste sofisticado
+   • Máximo 3 colores por outfit
+   • Colores vivos (rosa, rojo, amarillo) = una sola pieza focal + neutros
+   • Denim azul se comporta como neutro
 
-6. CALIDAD DE LA RESPUESTA:
-   - Explica brevemente por qué los colores elegidos funcionan juntos
-   - Menciona para qué ocasión es ideal el look
-   - Señala cómo se complementan las prendas entre sí
-   - Si es relevante, da un tip de estilo
-   - Tono: cálido, cercano, como un amigo con buen gusto que te asesora
-   - Responde siempre en español
+3. METADATA DETALLADA — usa los campos estructurados de cada prenda:
+   • "material" afecta la formalidad y la estación (lino = verano, lana = invierno)
+   • "fit" afecta proporciones (oversized arriba = ajustado abajo, y viceversa)
+   • "patrón" afecta combinación (estampado + liso, nunca 2 estampados juntos)
+   • "temporada" es una restricción hard — no uses ropa de invierno en verano
 
-7. CONTROL DEL PANEL:
-   - "cambiar_panel": true → si el usuario pide outfit nuevo, diferente, o quiere ver algo distinto
-   - "cambiar_panel": false → si solo pide consejo en texto, mejora, pregunta algo, o comenta el outfit actual
+4. VARIEDAD REAL — mira los outfits recientes del usuario:
+   • Si una prenda se usó en los últimos 7 días, EVÍTALA a menos que no haya alternativa
+   • Si se usó hace 8-14 días, úsala solo si es la claramente mejor opción
+   • El usuario merece ver combinaciones nuevas cada día
 
-8. REGLA DE ORO:
-   - outfit_ids SOLO puede contener IDs de PRENDAS SUELTAS
-   - NUNCA incluyas IDs de outfits guardados en outfit_ids
+5. PERSONALIZACIÓN — usa el perfil del usuario:
+   • Su bio/estilo personal revela preferencias reales (minimalista, colorido, sport, etc.)
+   • Adapta la elección a ese estilo cuando la ocasión lo permita
+   • Si indica género, ajusta la silueta y proporciones apropiadas
 
-Devuelve SIEMPRE y ÚNICAMENTE este JSON exacto sin ningún texto antes ni después:
-{"respuesta":"explicación detallada y cercana del outfit","outfit_ids":[id1,id2,id3],"cambiar_panel":true}`,
+6. EXCLUSIONES ABSOLUTAS:
+   • Si el usuario dice "sin X" o "no quiero X", esa prenda NUNCA aparece
+   • Sin excepciones ni interpretaciones
+
+7. CONTINUIDAD Y EDICIÓN:
+   • Si pide cambiar solo una pieza, mantén el resto igual
+   • Si pide algo completamente nuevo, rompe con lo anterior y sorprende
+
+8. ESTRUCTURA DE RESPUESTA OBLIGATORIA:
+   La "respuesta" debe seguir SIEMPRE este formato (sin etiquetas HTML, solo texto y emojis):
+
+   Una frase de apertura que nombre el look/ocasión (ej. "Un look casual chic perfecto para el día 🌿")
+
+   Luego, por cada prenda seleccionada, una línea con este formato exacto:
+   • [nombre de la prenda] — [razón específica: color, fit, material, cómo combina con las demás]
+
+   Finalmente, 1 tip de estilo accionable (empieza con "💡 Tip:").
+
+   Ejemplo de respuesta correcta:
+   "Look urbano relajado para un día de actividades 🧢
+
+   • Hoodie gris oversized — el gris actúa como neutro y el fit holgado equilibra el look con el pantalón ajustado
+   • Jean slim negro — contrasta en fit con la parte superior y alarga la silueta
+   • Tenis blancos — ancla el outfit con un punto limpio que abre el espacio visual
+
+   💡 Tip: dobla ligeramente el borde del jean para mostrar el tobillo y dar un toque más intencional al look."
+
+   Tono: cercano, seguro, como un amigo con buen gusto. Responde siempre en español.
+
+9. CONTROL DEL PANEL:
+   • "cambiar_panel": true → usuario pide outfit nuevo o diferente
+   • "cambiar_panel": false → solo pide consejo, comenta, o hace pregunta
+
+10. REGLA DE ORO:
+    • outfit_ids SOLO contiene IDs de PRENDAS SUELTAS (tipo=prenda)
+    • NUNCA IDs de outfits guardados
+
+Devuelve SIEMPRE y ÚNICAMENTE este JSON (sin texto antes ni después):
+{"respuesta":"[respuesta con el formato del punto 8]","outfit_ids":[id1,id2,id3],"cambiar_panel":true}`,
         },
         {
           role: "user",
-          content: `${contextoPrendas}${contextoOutfits}${contextoActual}${contextoClima}${historialTexto}\n\nMensaje del usuario: ${mensaje}`,
+          content: `${contextoPerfil}${contextoClima}${contextoPrendas}${contextoOutfits}${contextoActual}${contextoCalendario}${avisoRepeticion}${historialTexto}\n\nMensaje del usuario: ${mensaje}`,
         },
       ],
-      max_tokens: 800,
-      temperature: 1.0,
+      max_tokens: 900,
+      temperature: 0.7,
     });
 
     const parsed = safeParseJSON(ai.choices[0].message.content);
@@ -1243,15 +1552,12 @@ app.delete("/api/wishlist/:id", requireAuth, async (req, res) => {
 /* ─────────────────────────────────────
    🔔 NOTIFICACIONES
 ───────────────────────────────────── */
-app.get("/api/notificaciones/count", async (req, res) => {
+app.get("/api/notificaciones/count", requireAuth, async (req, res) => {
   try {
-    const { usuario_id } = req.query;
-    if (!usuario_id) return res.status(400).json({ error: "Falta usuario_id" });
-
     const { count, error } = await supabase
       .from("notifications")
       .select("*", { count: "exact", head: true })
-      .eq("usuario_id", usuario_id)
+      .eq("usuario_id", req.userId)
       .eq("leida", false);
 
     if (error) throw error;
@@ -1262,18 +1568,15 @@ app.get("/api/notificaciones/count", async (req, res) => {
   }
 });
 
-app.get("/api/notificaciones", async (req, res) => {
+app.get("/api/notificaciones", requireAuth, async (req, res) => {
   try {
-    const { usuario_id } = req.query;
-    if (!usuario_id) return res.status(400).json({ error: "Falta usuario_id" });
-
     const { data, error } = await supabase
       .from("notifications")
       .select(`
         id, tipo, mensaje, leida, created_at, post_id,
         from_profile:from_user_id(id, username, nombre, avatar_url)
       `)
-      .eq("usuario_id", usuario_id)
+      .eq("usuario_id", req.userId)
       .order("created_at", { ascending: false })
       .limit(30);
 
@@ -1301,9 +1604,12 @@ app.put("/api/notificaciones/leer", requireAuth, async (req, res) => {
   }
 });
 
-app.delete("/api/notificaciones/:id", async (req, res) => {
+app.delete("/api/notificaciones/:id", requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
+    const { data: notif } = await supabase.from("notifications").select("usuario_id").eq("id", id).single();
+    if (!notif) return res.status(404).json({ error: "No encontrada" });
+    if (notif.usuario_id !== req.userId) return res.status(403).json({ error: "Sin permiso" });
     const { error } = await supabase.from("notifications").delete().eq("id", id);
     if (error) throw error;
     res.json({ ok: true });
@@ -1313,15 +1619,12 @@ app.delete("/api/notificaciones/:id", async (req, res) => {
   }
 });
 
-app.delete("/api/notificaciones", async (req, res) => {
+app.delete("/api/notificaciones", requireAuth, async (req, res) => {
   try {
-    const { usuario_id } = req.query;
-    if (!usuario_id) return res.status(400).json({ error: "Falta usuario_id" });
-
     const { error } = await supabase
       .from("notifications")
       .delete()
-      .eq("usuario_id", usuario_id);
+      .eq("usuario_id", req.userId);
 
     if (error) throw error;
     res.json({ ok: true });
@@ -1334,10 +1637,10 @@ app.delete("/api/notificaciones", async (req, res) => {
 /* ─────────────────────────────────────
    📅 CALENDARIO
 ───────────────────────────────────── */
-app.get("/api/calendario", async (req, res) => {
+app.get("/api/calendario", requireAuth, async (req, res) => {
   try {
-    const { usuario_id, year, month } = req.query;
-    if (!usuario_id) return res.status(400).json({ error: "Falta usuario_id" });
+    const { year, month } = req.query;
+    const usuario_id = req.userId;
 
     let query = supabase
       .from("calendar_outfits")
@@ -1394,6 +1697,60 @@ app.delete("/api/calendario/:id", requireAuth, async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     console.error("🔥 delete calendario:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* ─────────────────────────────────────
+   🔥 RACHA DE OUTFITS
+───────────────────────────────────── */
+app.get("/api/racha", requireAuth, async (req, res) => {
+  try {
+    const usuario_id = req.userId;
+    const { data, error } = await supabase
+      .from("calendario")
+      .select("fecha")
+      .eq("usuario_id", usuario_id)
+      .order("fecha", { ascending: false });
+
+    if (error) {
+      console.error("🔥 racha query:", error.message);
+      return res.json({ racha: 0, ultimaFecha: null, registroHoy: false });
+    }
+
+    // Normalizar a YYYY-MM-DD y deduplicar
+    const fechas = [...new Set(
+      (data || []).map(e => (e.fecha || "").slice(0, 10)).filter(Boolean)
+    )].sort().reverse();
+
+    if (!fechas.length) return res.json({ racha: 0, ultimaFecha: null });
+
+    const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+    const ayer = new Date(hoy); ayer.setDate(ayer.getDate() - 1);
+    const ultima = new Date(fechas[0] + "T12:00:00"); ultima.setHours(0, 0, 0, 0);
+
+    // Si el último registro es más antiguo que ayer, la racha se rompió
+    if (ultima < ayer) return res.json({ racha: 0, ultimaFecha: fechas[0] });
+
+    let racha = 1;
+    let esperada = new Date(ultima); esperada.setDate(esperada.getDate() - 1);
+
+    for (let i = 1; i < fechas.length; i++) {
+      const f = new Date(fechas[i] + "T12:00:00"); f.setHours(0, 0, 0, 0);
+      if (f.getTime() === esperada.getTime()) {
+        racha++;
+        esperada.setDate(esperada.getDate() - 1);
+      } else if (f < esperada) {
+        break;
+      }
+    }
+
+    // ¿Ya registró outfit hoy?
+    const registroHoy = fechas[0] === hoy.toISOString().split("T")[0];
+
+    res.json({ racha, ultimaFecha: fechas[0], registroHoy });
+  } catch (err) {
+    console.error("🔥 racha:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
