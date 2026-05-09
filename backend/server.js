@@ -106,14 +106,6 @@ function getAuthDebug(token) {
   };
 }
 
-app.get("/api/debug/auth-config", (_req, res) => {
-  res.json({
-    backendProject: getSupabaseProjectRef(process.env.SUPABASE_URL),
-    hasSupabaseUrl: Boolean(process.env.SUPABASE_URL),
-    hasServiceKey: Boolean(process.env.SUPABASE_SERVICE_KEY),
-    serviceKeyLength: process.env.SUPABASE_SERVICE_KEY?.length || 0,
-  });
-});
 
 /* ─────────────────────────────────────
    🔐 AUTH MIDDLEWARE (Fix 2)
@@ -340,12 +332,10 @@ async function crearNotificacion({ usuario_id, from_usuario_id, tipo, mensaje, p
 /* ─────────────────────────────────────
    👤 PERFIL
 ───────────────────────────────────── */
-app.get("/api/perfil/me", async (req, res) => {
+app.get("/api/perfil/me", requireAuth, async (req, res) => {
   try {
-    const { usuario_id } = req.query;
-    if (!usuario_id) return res.status(400).json({ error: "Falta usuario_id" });
     const { data, error } = await supabase
-      .from("profiles").select("*").eq("id", usuario_id).single();
+      .from("profiles").select("*").eq("id", req.userId).single();
     if (error) throw error;
     res.json(data);
   } catch (err) {
@@ -369,15 +359,15 @@ app.get("/api/perfil/:username", async (req, res) => {
   }
 });
 
-app.get("/api/usuarios/buscar", async (req, res) => {
+app.get("/api/usuarios/buscar", requireAuth, async (req, res) => {
   try {
-    const { q, usuario_id } = req.query;
+    const { q } = req.query;
     if (!q) return res.json([]);
     const { data, error } = await supabase
       .from("profiles")
       .select("id, username, nombre, avatar_url")
       .ilike("username", `%${q}%`)
-      .neq("id", usuario_id || "")
+      .neq("id", req.userId)
       .limit(10);
     if (error) throw error;
     res.json(data || []);
@@ -393,10 +383,9 @@ app.get("/api/usuarios/buscar", async (req, res) => {
    ni solicitudes pendientes).
    Usado por el sidebar del Feed.
 ───────────────────────────────────── */
-app.get("/api/usuarios/sugeridos", async (req, res) => {
+app.get("/api/usuarios/sugeridos", requireAuth, async (req, res) => {
   try {
-    const { usuario_id } = req.query;
-    if (!usuario_id) return res.status(400).json({ error: "Falta usuario_id" });
+    const usuario_id = req.userId;
 
     // Obtener todas las conexiones existentes (aceptadas + pendientes)
     const { data: amistades } = await supabase
@@ -434,6 +423,9 @@ app.put("/api/perfil", requireAuth, async (req, res) => {
     const { username, nombre, bio } = req.body;
 
     if (username) {
+      if (!/^[a-z0-9_.]{3,30}$/.test(username.toLowerCase())) {
+        return res.status(400).json({ error: "Username inválido: solo letras minúsculas, números, _ y . (3-30 caracteres)" });
+      }
       const { data: existing } = await supabase
         .from("profiles").select("id")
         .eq("username", username.toLowerCase())
@@ -573,7 +565,9 @@ app.get("/api/amistad/solicitudes", requireAuth, async (req, res) => {
 
 app.get("/api/amistad/amigos", requireAuth, async (req, res) => {
   try {
-    const usuario_id = req.query.usuario_id || req.userId;
+    // uid param permite ver amigos de otro usuario (para stats de perfil)
+    // Sin uid → devuelve los amigos del usuario autenticado
+    const usuario_id = req.query.uid || req.userId;
     const { data, error } = await supabase
       .from("friendships")
       .select(`id, requester:requester_id(id, username, nombre, avatar_url), addressee:addressee_id(id, username, nombre, avatar_url)`)
@@ -592,10 +586,11 @@ app.get("/api/amistad/amigos", requireAuth, async (req, res) => {
   }
 });
 
-app.get("/api/amistad/estado", async (req, res) => {
+app.get("/api/amistad/estado", requireAuth, async (req, res) => {
   try {
-    const { usuario_id, otro_id } = req.query;
-    if (!usuario_id || !otro_id) return res.status(400).json({ error: "Faltan datos" });
+    const { otro_id } = req.query;
+    const usuario_id = req.userId;
+    if (!otro_id) return res.status(400).json({ error: "Falta otro_id" });
     const { data } = await supabase
       .from("friendships")
       .select("id, status, requester_id, addressee_id")
@@ -866,7 +861,8 @@ app.post("/api/prendas/reanalizar", requireAuth, aiLimiter, async (req, res) => 
       .from("prendas")
       .select("id, imagen_url, descripcion, metadata_ia")
       .eq("usuario_id", usuario_id)
-      .eq("tipo", "prenda");
+      .eq("tipo", "prenda")
+      .limit(500);
 
     if (error) throw error;
     if (!prendas || prendas.length === 0)
@@ -1252,7 +1248,7 @@ Devuelve SIEMPRE y ÚNICAMENTE este JSON (sin texto antes ni después):
       temperature: 0.7,
     });
 
-    const parsed = safeParseJSON(ai.choices[0].message.content);
+    const parsed = safeParseJSON(ai?.choices?.[0]?.message?.content);
 
     if (!parsed) {
       const fallback = deduplicarPorTipo([...prendasSueltas].sort(() => Math.random() - 0.5));
@@ -1320,7 +1316,7 @@ app.post("/api/recomendaciones-compra", requireAuth, async (req, res) => {
       temperature: 0.7,
       max_tokens: 150,
     });
-    const parsed = safeParseJSON(ai.choices[0].message.content);
+    const parsed = safeParseJSON(ai?.choices?.[0]?.message?.content);
     res.json({ recomendaciones: parsed?.recomendaciones || [] });
   } catch (err) {
     console.error("📊 recomendaciones:", err.message);
