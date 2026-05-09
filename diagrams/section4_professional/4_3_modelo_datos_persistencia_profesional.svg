@@ -1,0 +1,118 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1650" height="1020" viewBox="0 0 1650 1020">
+  <defs>
+    <style>
+      .title{font:700 30px Arial,sans-serif;fill:#111827}
+      .subtitle{font:14px Arial,sans-serif;fill:#475569}
+      .h{font:700 17px Arial,sans-serif;fill:#111827}
+      .t{font:14px Arial,sans-serif;fill:#111827}
+      .s{font:13px Arial,sans-serif;fill:#475569}
+      .bg{fill:#f8fafc;stroke:#cbd5e1;stroke-width:1.5;rx:22}
+      .pkg{fill:#ffffff;stroke:#cbd5e1;stroke-width:2;rx:18}
+      .class{fill:#ffffff;stroke:#2563eb;stroke-width:2;rx:10}
+      .classHead{fill:#dbeafe;stroke:#2563eb;stroke-width:2}
+      .front{fill:#ecfeff;stroke:#0891b2;stroke-width:2;rx:10}
+      .back{fill:#f0fdf4;stroke:#16a34a;stroke-width:2;rx:10}
+      .ext{fill:#eef2ff;stroke:#4f46e5;stroke-width:2;rx:12}
+      .db{fill:#fff7ed;stroke:#ea580c;stroke-width:2;rx:12}
+      .act{fill:#ecfeff;stroke:#0891b2;stroke-width:2;rx:18}
+      .decision{fill:#fff7ed;stroke:#ea580c;stroke-width:2}
+      .lane{fill:#ffffff;stroke:#cbd5e1;stroke-width:1.5;rx:12}
+      .line{stroke:#334155;stroke-width:2.1;fill:none}
+      .dash{stroke:#334155;stroke-width:2;fill:none;stroke-dasharray:8 6}
+      .actor{stroke:#111827;stroke-width:2;fill:none}
+      .start{fill:#111827;stroke:#111827;stroke-width:2}
+      .endOuter{fill:#ffffff;stroke:#111827;stroke-width:2}
+      .endInner{fill:#111827}
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#334155"/>
+    </marker>
+  </defs>
+  <rect x="25" y="25" width="1600" height="970" class="bg"/>
+  <text x="825.0" y="70" text-anchor="middle" class="title">Figura 4.9. Modelo de datos / Persistencia</text>
+  <text x="825" y="98" text-anchor="middle" class="subtitle">Vista relacional de tablas principales en Supabase PostgreSQL</text>
+  <rect x="90" y="160" width="280" height="182" class="class"/>
+  <rect x="90" y="160" width="280" height="42" class="classHead"/>
+  <text x="230.0" y="187" text-anchor="middle" class="h">profiles</text>
+  <text x="108" y="230" text-anchor="start" class="t">id PK</text>
+  <text x="108" y="254" text-anchor="start" class="t">username</text>
+  <text x="108" y="278" text-anchor="start" class="t">nombre</text>
+  <text x="108" y="302" text-anchor="start" class="t">avatar_url</text>
+  <text x="108" y="326" text-anchor="start" class="t">setup_completo</text>
+  <rect x="500" y="120" width="300" height="182" class="class"/>
+  <rect x="500" y="120" width="300" height="42" class="classHead"/>
+  <text x="650.0" y="147" text-anchor="middle" class="h">prendas</text>
+  <text x="518" y="190" text-anchor="start" class="t">id PK</text>
+  <text x="518" y="214" text-anchor="start" class="t">usuario_id FK</text>
+  <text x="518" y="238" text-anchor="start" class="t">tipo</text>
+  <text x="518" y="262" text-anchor="start" class="t">imagen_url</text>
+  <text x="518" y="286" text-anchor="start" class="t">metadata_ia JSON</text>
+  <rect x="930" y="150" width="310" height="182" class="class"/>
+  <rect x="930" y="150" width="310" height="42" class="classHead"/>
+  <text x="1085.0" y="177" text-anchor="middle" class="h">calendar_outfits</text>
+  <text x="948" y="220" text-anchor="start" class="t">id PK</text>
+  <text x="948" y="244" text-anchor="start" class="t">usuario_id FK</text>
+  <text x="948" y="268" text-anchor="start" class="t">fecha</text>
+  <text x="948" y="292" text-anchor="start" class="t">imagen_url</text>
+  <text x="948" y="316" text-anchor="start" class="t">metadata JSON</text>
+  <rect x="90" y="500" width="280" height="182" class="class"/>
+  <rect x="90" y="500" width="280" height="42" class="classHead"/>
+  <text x="230.0" y="527" text-anchor="middle" class="h">posts</text>
+  <text x="108" y="570" text-anchor="start" class="t">id PK</text>
+  <text x="108" y="594" text-anchor="start" class="t">usuario_id FK</text>
+  <text x="108" y="618" text-anchor="start" class="t">imagen_url</text>
+  <text x="108" y="642" text-anchor="start" class="t">descripcion</text>
+  <text x="108" y="666" text-anchor="start" class="t">prendas JSON</text>
+  <rect x="500" y="485" width="240" height="134" class="class"/>
+  <rect x="500" y="485" width="240" height="42" class="classHead"/>
+  <text x="620.0" y="512" text-anchor="middle" class="h">likes</text>
+  <text x="518" y="555" text-anchor="start" class="t">id PK</text>
+  <text x="518" y="579" text-anchor="start" class="t">post_id FK</text>
+  <text x="518" y="603" text-anchor="start" class="t">usuario_id FK</text>
+  <rect x="810" y="485" width="280" height="158" class="class"/>
+  <rect x="810" y="485" width="280" height="42" class="classHead"/>
+  <text x="950.0" y="512" text-anchor="middle" class="h">comments</text>
+  <text x="828" y="555" text-anchor="start" class="t">id PK</text>
+  <text x="828" y="579" text-anchor="start" class="t">post_id FK</text>
+  <text x="828" y="603" text-anchor="start" class="t">usuario_id FK</text>
+  <text x="828" y="627" text-anchor="start" class="t">texto</text>
+  <rect x="1160" y="485" width="280" height="158" class="class"/>
+  <rect x="1160" y="485" width="280" height="42" class="classHead"/>
+  <text x="1300.0" y="512" text-anchor="middle" class="h">wishlist</text>
+  <text x="1178" y="555" text-anchor="start" class="t">id PK</text>
+  <text x="1178" y="579" text-anchor="start" class="t">usuario_id FK</text>
+  <text x="1178" y="603" text-anchor="start" class="t">post_id FK</text>
+  <text x="1178" y="627" text-anchor="start" class="t">imagen_url</text>
+  <rect x="500" y="780" width="310" height="158" class="class"/>
+  <rect x="500" y="780" width="310" height="42" class="classHead"/>
+  <text x="655.0" y="807" text-anchor="middle" class="h">friendships</text>
+  <text x="518" y="850" text-anchor="start" class="t">id PK</text>
+  <text x="518" y="874" text-anchor="start" class="t">requester_id FK</text>
+  <text x="518" y="898" text-anchor="start" class="t">addressee_id FK</text>
+  <text x="518" y="922" text-anchor="start" class="t">status</text>
+  <rect x="930" y="780" width="320" height="182" class="class"/>
+  <rect x="930" y="780" width="320" height="42" class="classHead"/>
+  <text x="1090.0" y="807" text-anchor="middle" class="h">notifications</text>
+  <text x="948" y="850" text-anchor="start" class="t">id PK</text>
+  <text x="948" y="874" text-anchor="start" class="t">usuario_id FK</text>
+  <text x="948" y="898" text-anchor="start" class="t">from_user_id FK</text>
+  <text x="948" y="922" text-anchor="start" class="t">tipo</text>
+  <text x="948" y="946" text-anchor="start" class="t">leida</text>
+  <line x1="370" y1="230" x2="500" y2="230" class="line" marker-end="url(#arrow)"/>
+  <text x="435.0" y="222.0" text-anchor="middle" class="s">1 a *</text>
+  <line x1="370" y1="260" x2="930" y2="240" class="line" marker-end="url(#arrow)"/>
+  <text x="650.0" y="242.0" text-anchor="middle" class="s">1 a *</text>
+  <line x1="230" y1="330" x2="230" y2="500" class="line" marker-end="url(#arrow)"/>
+  <text x="230.0" y="407.0" text-anchor="middle" class="s">1 a *</text>
+  <line x1="370" y1="565" x2="500" y2="550" class="line" marker-end="url(#arrow)"/>
+  <text x="435.0" y="549.5" text-anchor="middle" class="s">1 a *</text>
+  <line x1="370" y1="590" x2="810" y2="550" class="line" marker-end="url(#arrow)"/>
+  <text x="590.0" y="562.0" text-anchor="middle" class="s">1 a *</text>
+  <line x1="370" y1="620" x2="1160" y2="550" class="line" marker-end="url(#arrow)"/>
+  <text x="765.0" y="577.0" text-anchor="middle" class="s">1 a *</text>
+  <line x1="640" y1="650" x2="640" y2="780" class="line" marker-end="url(#arrow)"/>
+  <text x="640.0" y="707.0" text-anchor="middle" class="s">1 a *</text>
+  <polyline points="230,330 230,940 1090,940 1090,780" class="line" marker-end="url(#arrow)"/>
+  <text x="1090" y="932" text-anchor="middle" class="s">1 a *</text>
+  <text x="90" y="970" text-anchor="start" class="subtitle">Nota. El almacenamiento de imágenes se realiza en Supabase Storage y las URLs públicas se referencian desde estas tablas.</text>
+</svg>

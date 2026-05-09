@@ -1,0 +1,154 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1900" height="1700" viewBox="0 0 1900 1700">
+  <defs>
+    <style>
+      .title{font:700 30px Arial,sans-serif;fill:#111827}
+      .subtitle{font:14px Arial,sans-serif;fill:#475569}
+      .laneTitle{font:700 18px Arial,sans-serif;fill:#0f172a}
+      .txt{font:15px Arial,sans-serif;fill:#111827}
+      .small{font:13px Arial,sans-serif;fill:#475569}
+      .bg{fill:#f8fafc;stroke:#cbd5e1;stroke-width:1.5;rx:22}
+      .lane{fill:#ffffff;stroke:#cbd5e1;stroke-width:1.5;rx:14}
+      .act{fill:#ecfeff;stroke:#0891b2;stroke-width:2;rx:18}
+      .app{fill:#dbeafe;stroke:#2563eb;stroke-width:2;rx:18}
+      .svc{fill:#f0fdf4;stroke:#16a34a;stroke-width:2;rx:18}
+      .decision{fill:#fff7ed;stroke:#ea580c;stroke-width:2}
+      .start{fill:#111827;stroke:#111827;stroke-width:2}
+      .endOuter{fill:#ffffff;stroke:#111827;stroke-width:2}
+      .endInner{fill:#111827}
+      .line{stroke:#334155;stroke-width:2.1;fill:none}
+      .dash{stroke:#64748b;stroke-width:2;fill:none;stroke-dasharray:8 6}
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#334155"/>
+    </marker>
+  </defs>
+
+  <rect x="25" y="25" width="1850" height="1650" class="bg"/>
+  <text x="950" y="70" text-anchor="middle" class="title">Figura 4.3. Diagrama de actividades general del sistema</text>
+  <text x="950" y="98" text-anchor="middle" class="subtitle">Flujo completo de uso de Be: Confident desde autenticación hasta los módulos principales</text>
+
+  <!-- Swimlanes -->
+  <rect x="70" y="130" width="330" height="1450" class="lane"/>
+  <text x="235" y="165" text-anchor="middle" class="laneTitle">Usuario</text>
+  <rect x="420" y="130" width="460" height="1450" class="lane"/>
+  <text x="650" y="165" text-anchor="middle" class="laneTitle">App React / Capacitor</text>
+  <rect x="900" y="130" width="460" height="1450" class="lane"/>
+  <text x="1130" y="165" text-anchor="middle" class="laneTitle">Backend Express</text>
+  <rect x="1380" y="130" width="450" height="1450" class="lane"/>
+  <text x="1605" y="165" text-anchor="middle" class="laneTitle">Servicios externos</text>
+
+  <!-- Start and auth flow -->
+  <circle cx="235" cy="225" r="18" class="start"/>
+  <rect x="120" y="275" width="230" height="54" class="act"/>
+  <text x="235" y="308" text-anchor="middle" class="txt">Abre Be: Confident</text>
+
+  <rect x="520" y="275" width="260" height="54" class="app"/>
+  <text x="650" y="308" text-anchor="middle" class="txt">Carga aplicación</text>
+
+  <polygon points="650,370 805,445 650,520 495,445" class="decision"/>
+  <text x="650" y="442" text-anchor="middle" class="txt">¿Sesión activa?</text>
+
+  <rect x="120" y="565" width="230" height="54" class="act"/>
+  <text x="235" y="598" text-anchor="middle" class="txt">Ingresa credenciales</text>
+  <rect x="520" y="565" width="260" height="54" class="app"/>
+  <text x="650" y="598" text-anchor="middle" class="txt">Envía login</text>
+  <rect x="1465" y="565" width="280" height="54" class="svc"/>
+  <text x="1605" y="598" text-anchor="middle" class="txt">Supabase Auth valida</text>
+
+  <polygon points="650,660 805,735 650,810 495,735" class="decision"/>
+  <text x="650" y="732" text-anchor="middle" class="txt">¿Perfil completo?</text>
+  <rect x="120" y="845" width="230" height="54" class="act"/>
+  <text x="235" y="878" text-anchor="middle" class="txt">Completa perfil</text>
+  <rect x="1000" y="845" width="260" height="54" class="svc"/>
+  <text x="1130" y="878" text-anchor="middle" class="txt">Guarda profile</text>
+
+  <rect x="500" y="945" width="300" height="66" class="app"/>
+  <text x="650" y="973" text-anchor="middle" class="txt">Muestra navegación</text>
+  <text x="650" y="995" text-anchor="middle" class="small">Asistente · Closet · Calendario · Feed · Perfil</text>
+
+  <polygon points="650,1060 835,1140 650,1220 465,1140" class="decision"/>
+  <text x="650" y="1130" text-anchor="middle" class="txt">¿Qué desea hacer?</text>
+  <text x="650" y="1152" text-anchor="middle" class="small">selección de módulo</text>
+
+  <!-- Module actions -->
+  <rect x="95" y="1280" width="280" height="70" class="act"/>
+  <text x="235" y="1308" text-anchor="middle" class="txt">Subir prenda/outfit</text>
+  <text x="235" y="1330" text-anchor="middle" class="small">cámara o galería</text>
+
+  <rect x="465" y="1280" width="280" height="70" class="app"/>
+  <text x="605" y="1308" text-anchor="middle" class="txt">Consultar closet</text>
+  <text x="605" y="1330" text-anchor="middle" class="small">filtrar, ver, eliminar, reanalizar</text>
+
+  <rect x="795" y="1280" width="280" height="70" class="app"/>
+  <text x="935" y="1308" text-anchor="middle" class="txt">Usar asistente IA</text>
+  <text x="935" y="1330" text-anchor="middle" class="small">pedir outfit o consejo</text>
+
+  <rect x="1125" y="1280" width="280" height="70" class="app"/>
+  <text x="1265" y="1308" text-anchor="middle" class="txt">Planificar calendario</text>
+  <text x="1265" y="1330" text-anchor="middle" class="small">guardar, editar o eliminar outfit</text>
+
+  <rect x="1455" y="1280" width="280" height="70" class="app"/>
+  <text x="1595" y="1308" text-anchor="middle" class="txt">Comunidad y perfil</text>
+  <text x="1595" y="1330" text-anchor="middle" class="small">feed, amigos, likes, comentarios</text>
+
+  <!-- Backend/service processing for each module -->
+  <rect x="985" y="1405" width="290" height="70" class="svc"/>
+  <text x="1130" y="1433" text-anchor="middle" class="txt">Procesa solicitud</text>
+  <text x="1130" y="1455" text-anchor="middle" class="small">rutas API + reglas de negocio</text>
+
+  <rect x="1465" y="1405" width="280" height="70" class="svc"/>
+  <text x="1605" y="1433" text-anchor="middle" class="txt">Servicios especializados</text>
+  <text x="1605" y="1455" text-anchor="middle" class="small">Supabase · OpenAI · rembg · clima</text>
+
+  <rect x="520" y="1485" width="260" height="60" class="app"/>
+  <text x="650" y="1521" text-anchor="middle" class="txt">Actualiza interfaz</text>
+
+  <circle cx="235" cy="1515" r="18" class="endOuter"/>
+  <circle cx="235" cy="1515" r="11" class="endInner"/>
+
+  <!-- Lines -->
+  <line x1="235" y1="243" x2="235" y2="275" class="line" marker-end="url(#arrow)"/>
+  <line x1="350" y1="302" x2="520" y2="302" class="line" marker-end="url(#arrow)"/>
+  <line x1="650" y1="329" x2="650" y2="370" class="line" marker-end="url(#arrow)"/>
+
+  <polyline points="495,445 235,445 235,565" class="line" marker-end="url(#arrow)"/>
+  <text x="365" y="430" text-anchor="middle" class="small">No</text>
+  <line x1="350" y1="592" x2="520" y2="592" class="line" marker-end="url(#arrow)"/>
+  <polyline points="780,592 1465,592" class="line" marker-end="url(#arrow)"/>
+  <polyline points="1605,619 1605,735 805,735" class="line" marker-end="url(#arrow)"/>
+
+  <line x1="650" y1="520" x2="650" y2="660" class="line" marker-end="url(#arrow)"/>
+  <text x="675" y="590" class="small">Sí</text>
+  <polyline points="495,735 235,735 235,845" class="line" marker-end="url(#arrow)"/>
+  <text x="370" y="720" text-anchor="middle" class="small">No</text>
+  <line x1="350" y1="872" x2="1000" y2="872" class="line" marker-end="url(#arrow)"/>
+  <polyline points="1130,899 1130,930 650,930 650,945" class="line" marker-end="url(#arrow)"/>
+  <line x1="650" y1="810" x2="650" y2="945" class="line" marker-end="url(#arrow)"/>
+  <text x="675" y="885" class="small">Sí</text>
+
+  <line x1="650" y1="1011" x2="650" y2="1060" class="line" marker-end="url(#arrow)"/>
+
+  <polyline points="520,1170 235,1170 235,1280" class="line" marker-end="url(#arrow)"/>
+  <text x="340" y="1155" text-anchor="middle" class="small">subida</text>
+  <polyline points="610,1220 605,1280" class="line" marker-end="url(#arrow)"/>
+  <text x="630" y="1255" class="small">closet</text>
+  <polyline points="720,1210 935,1280" class="line" marker-end="url(#arrow)"/>
+  <text x="835" y="1240" text-anchor="middle" class="small">asistente</text>
+  <polyline points="805,1160 1265,1280" class="line" marker-end="url(#arrow)"/>
+  <text x="1030" y="1205" text-anchor="middle" class="small">calendario</text>
+  <polyline points="835,1140 1595,1280" class="line" marker-end="url(#arrow)"/>
+  <text x="1230" y="1125" text-anchor="middle" class="small">comunidad/perfil</text>
+
+  <line x1="375" y1="1315" x2="985" y2="1435" class="line" marker-end="url(#arrow)"/>
+  <line x1="745" y1="1315" x2="985" y2="1435" class="line" marker-end="url(#arrow)"/>
+  <line x1="1075" y1="1315" x2="985" y2="1435" class="line" marker-end="url(#arrow)"/>
+  <line x1="1265" y1="1350" x2="1130" y2="1405" class="line" marker-end="url(#arrow)"/>
+  <line x1="1595" y1="1350" x2="1275" y2="1435" class="line" marker-end="url(#arrow)"/>
+  <line x1="1275" y1="1440" x2="1465" y2="1440" class="line" marker-end="url(#arrow)"/>
+  <polyline points="1465,1475 1465,1515 780,1515" class="line" marker-end="url(#arrow)"/>
+  <line x1="520" y1="1515" x2="253" y2="1515" class="line" marker-end="url(#arrow)"/>
+
+  <!-- Notes -->
+  <rect x="95" y="1588" width="1710" height="44" class="lane"/>
+  <text x="120" y="1616" class="subtitle">Nota. Desde la navegación principal el usuario puede repetir el ciclo con cualquier módulo: subir prendas, consultar closet, pedir recomendaciones, planificar outfits, interactuar en comunidad, editar perfil o gestionar amistades y notificaciones.</text>
+</svg>

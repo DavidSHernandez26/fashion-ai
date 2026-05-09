@@ -1617,7 +1617,7 @@ app.get("/api/notificaciones", requireAuth, async (req, res) => {
       .from("notifications")
       .select(`
         id, tipo, mensaje, leida, created_at, post_id,
-        from_profile:from_user_id(id, username, nombre, avatar_url)
+        from_profile:from_usuario_id(id, username, nombre, avatar_url)
       `)
       .eq("usuario_id", req.userId)
       .order("created_at", { ascending: false })

@@ -1,0 +1,32 @@
+4.1 Diseño detallado del software
+
+Figura 4.1. Diagrama de clases.
+El diagrama de clases presenta las entidades conceptuales más importantes de Be: Confident: usuario, perfil, prendas, calendario, publicaciones, interacciones sociales, wishlist, amistades y notificaciones. Esta vista permite reconocer cómo se relacionan los datos principales del sistema antes de pasar al diseño físico de persistencia.
+
+Figura 4.2. Diagrama de componentes.
+El diagrama de componentes muestra la separación lógica entre frontend, backend y servicios externos. El frontend concentra la experiencia de usuario en React/Vite/Capacitor; el backend Express centraliza reglas de negocio, autenticación, procesamiento de imágenes, prompts de IA y notificaciones; y los servicios externos aportan autenticación, base de datos, almacenamiento, inteligencia artificial, clima y remoción de fondo.
+
+Figura 4.3. Diagrama de actividades.
+El diagrama de actividades describe el flujo principal de subida y análisis de una prenda u outfit. El proceso inicia cuando el usuario selecciona una imagen, continúa con compresión, validación del JWT, procesamiento con Sharp, remoción de fondo, análisis con OpenAI, almacenamiento en Supabase y actualización del closet en la interfaz.
+
+Figura 4.4. Diagrama de despliegue.
+El diagrama de despliegue representa la distribución física de la solución. La aplicación puede ejecutarse como web app o como app móvil híbrida con Capacitor. El backend Express se despliega como API en Railway, mientras Supabase administra autenticación, base de datos y storage. OpenAI y FastAPI rembg funcionan como servicios externos especializados.
+
+4.3 Diseño del modelo de datos / Persistencia
+
+Figura 4.9. Modelo de datos / Persistencia.
+La persistencia se organiza alrededor de tablas de usuario, prendas, calendario, publicaciones e interacciones sociales. Las imágenes se almacenan en Supabase Storage y las tablas guardan las URL y la metadata asociada a cada recurso.
+
+4.4 Diseño de la arquitectura de software (Modelo C4)
+
+Figura 4.5. Modelo C4 Nivel 1: Contexto.
+Este nivel ubica a Be: Confident frente a sus actores y dependencias principales: el usuario, Supabase, OpenAI, el servicio de clima/geolocalización y el servicio de remoción de fondo.
+
+Figura 4.6. Modelo C4 Nivel 2: Contenedores.
+Este nivel separa la solución en contenedores ejecutables: App React/Capacitor, API Express, Supabase, OpenAI, FastAPI rembg y servicio de clima.
+
+Figura 4.7. Modelo C4 Nivel 3: Componentes Backend.
+Este nivel detalla los componentes internos del backend Express, incluyendo middleware de autenticación, carga de imágenes, procesamiento con Sharp, motor de prompts, cache, notificaciones y cliente Supabase.
+
+Figura 4.8. Modelo C4 Nivel 4: Código Backend.
+Este nivel baja al detalle de funciones y rutas clave dentro de server.js, mostrando cómo las rutas principales se apoyan en helpers como requireAuth, safeParseJSON, removeBackground, cache, generación de contexto climático y deduplicación de prendas.

@@ -1,0 +1,48 @@
+@startuml
+left to right direction
+
+actor Usuario
+actor "Usuario amigo" as Amigo
+actor "Servicio IA OpenAI" as OpenAI
+actor "Servicio Clima/Geolocalización" as Clima
+actor "Servicio rembg" as Rembg
+
+rectangle "Be: Confident" {
+  usecase "Iniciar sesión" as UC1
+  usecase "Completar perfil" as UC2
+  usecase "Subir prenda/outfit" as UC3
+  usecase "Analizar imagen con IA" as UC4
+  usecase "Remover fondo" as UC5
+  usecase "Consultar closet" as UC6
+  usecase "Solicitar outfit al asistente" as UC7
+  usecase "Consultar clima" as UC8
+  usecase "Generar recomendación de outfit" as UC9
+  usecase "Guardar outfit en calendario" as UC10
+  usecase "Publicar outfit" as UC11
+  usecase "Dar like/comentar/guardar" as UC12
+  usecase "Buscar usuarios y gestionar amistades" as UC13
+  usecase "Ver closet autorizado" as UC14
+}
+
+Usuario --> UC1
+Usuario --> UC2
+Usuario --> UC3
+Usuario --> UC6
+Usuario --> UC7
+Usuario --> UC10
+Usuario --> UC11
+Usuario --> UC12
+Usuario --> UC13
+
+Amigo --> UC14
+
+UC3 ..> UC4 : <<include>>
+UC3 ..> UC5 : <<include>>
+UC7 ..> UC8 : <<include>>
+UC7 ..> UC9 : <<include>>
+
+UC4 --> OpenAI
+UC9 --> OpenAI
+UC8 --> Clima
+UC5 --> Rembg
+@enduml

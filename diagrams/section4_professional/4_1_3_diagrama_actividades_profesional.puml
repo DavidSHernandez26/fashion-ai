@@ -1,0 +1,44 @@
+@startuml
+|Usuario|
+start
+:Abre modal de subida;
+:Selecciona prenda u outfit;
+|Frontend|
+:Captura o elige imagen;
+:Comprime imagen;
+:Obtiene JWT de Supabase;
+:Envía FormData;
+|Backend Express|
+:Valida JWT;
+if (¿JWT válido?) then (Sí)
+  :Multer recibe archivo;
+  :Sharp optimiza imagen;
+  if (¿Tipo = prenda?) then (Sí)
+    |Servicios externos|
+    :FastAPI rembg remueve fondo;
+    |Backend Express|
+    :Sube imagen a Storage;
+    |Servicios externos|
+    :OpenAI analiza prenda;
+    |Backend Express|
+    if (¿Prenda válida?) then (Sí)
+      :Inserta registro en prendas;
+      |Frontend|
+      :Refresca closet;
+    else (No)
+      :Responde error 422;
+    endif
+  else (Outfit)
+    :Sube outfit a Storage;
+    |Servicios externos|
+    :OpenAI detecta prendas;
+    |Backend Express|
+    :Inserta outfit;
+    |Frontend|
+    :Refresca closet;
+  endif
+else (No)
+  :Responde 401;
+endif
+stop
+@enduml

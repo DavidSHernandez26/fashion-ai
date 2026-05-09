@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1300" height="780" viewBox="0 0 1300 780">
+  <defs>
+    <style>
+      .title{font:700 30px Arial,sans-serif;fill:#111827}
+      .box{fill:#fff;stroke:#2563eb;stroke-width:2.5;rx:16}
+      .cloud{fill:#eef2ff;stroke:#4f46e5;stroke-width:2.5;rx:28}
+      .actor{stroke:#111827;stroke-width:2;fill:none}
+      .label{font:17px Arial,sans-serif;fill:#111827}
+      .small{font:14px Arial,sans-serif;fill:#475569}
+      .line{stroke:#334155;stroke-width:2.3;fill:none}
+      .bg{fill:#f8fafc;stroke:#cbd5e1;stroke-width:1.5;rx:20}
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#334155"/></marker>
+  </defs>
+  <rect x="25" y="25" width="1250" height="730" class="bg"/>
+  <text x="650" y="70" text-anchor="middle" class="title">Modelo C4 - Nivel 1: Contexto</text>
+
+  <circle cx="145" cy="270" r="20" class="actor"/><line x1="145" y1="290" x2="145" y2="355" class="actor"/><line x1="105" y1="315" x2="185" y2="315" class="actor"/><line x1="145" y1="355" x2="110" y2="405" class="actor"/><line x1="145" y1="355" x2="180" y2="405" class="actor"/>
+  <text x="145" y="440" text-anchor="middle" class="label">Usuario</text>
+
+  <rect x="470" y="270" width="300" height="120" class="box"/>
+  <text x="620" y="325" text-anchor="middle" class="title" style="font-size:24px">Be: Confident</text>
+  <text x="620" y="358" text-anchor="middle" class="small">Aplicación de closet inteligente</text>
+
+  <rect x="965" y="125" width="240" height="80" class="cloud"/><text x="1085" y="173" text-anchor="middle" class="label">Supabase</text>
+  <rect x="965" y="270" width="240" height="80" class="cloud"/><text x="1085" y="318" text-anchor="middle" class="label">OpenAI API</text>
+  <rect x="920" y="415" width="330" height="80" class="cloud"/><text x="1085" y="450" text-anchor="middle" class="label">Servicio de clima</text><text x="1085" y="475" text-anchor="middle" class="small">geolocalización</text>
+  <rect x="965" y="560" width="240" height="80" class="cloud"/><text x="1085" y="608" text-anchor="middle" class="label">Servicio rembg</text>
+
+  <line x1="185" y1="330" x2="470" y2="330" class="line" marker-end="url(#arrow)"/><text x="292" y="315" class="small">usa la aplicación</text>
+  <line x1="770" y1="300" x2="965" y2="175" class="line" marker-end="url(#arrow)"/><text x="830" y="210" class="small">auth, datos, archivos</text>
+  <line x1="770" y1="330" x2="965" y2="310" class="line" marker-end="url(#arrow)"/><text x="828" y="304" class="small">análisis y recomendaciones</text>
+  <line x1="770" y1="360" x2="920" y2="445" class="line" marker-end="url(#arrow)"/><text x="790" y="430" class="small">contexto climático</text>
+  <line x1="675" y1="390" x2="990" y2="590" class="line" marker-end="url(#arrow)"/><text x="742" y="525" class="small">remoción de fondo</text>
+</svg>

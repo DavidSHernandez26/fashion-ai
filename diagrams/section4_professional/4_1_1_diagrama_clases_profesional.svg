@@ -1,0 +1,133 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1180" viewBox="0 0 1800 1180">
+  <defs>
+    <style>
+      .title{font:700 30px Arial,sans-serif;fill:#111827}
+      .subtitle{font:14px Arial,sans-serif;fill:#475569}
+      .h{font:700 17px Arial,sans-serif;fill:#111827}
+      .t{font:14px Arial,sans-serif;fill:#111827}
+      .s{font:13px Arial,sans-serif;fill:#475569}
+      .bg{fill:#f8fafc;stroke:#cbd5e1;stroke-width:1.5;rx:22}
+      .pkg{fill:#ffffff;stroke:#cbd5e1;stroke-width:2;rx:18}
+      .class{fill:#ffffff;stroke:#2563eb;stroke-width:2;rx:10}
+      .classHead{fill:#dbeafe;stroke:#2563eb;stroke-width:2}
+      .front{fill:#ecfeff;stroke:#0891b2;stroke-width:2;rx:10}
+      .back{fill:#f0fdf4;stroke:#16a34a;stroke-width:2;rx:10}
+      .ext{fill:#eef2ff;stroke:#4f46e5;stroke-width:2;rx:12}
+      .db{fill:#fff7ed;stroke:#ea580c;stroke-width:2;rx:12}
+      .act{fill:#ecfeff;stroke:#0891b2;stroke-width:2;rx:18}
+      .decision{fill:#fff7ed;stroke:#ea580c;stroke-width:2}
+      .lane{fill:#ffffff;stroke:#cbd5e1;stroke-width:1.5;rx:12}
+      .line{stroke:#334155;stroke-width:2.1;fill:none}
+      .dash{stroke:#334155;stroke-width:2;fill:none;stroke-dasharray:8 6}
+      .actor{stroke:#111827;stroke-width:2;fill:none}
+      .start{fill:#111827;stroke:#111827;stroke-width:2}
+      .endOuter{fill:#ffffff;stroke:#111827;stroke-width:2}
+      .endInner{fill:#111827}
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#334155"/>
+    </marker>
+  </defs>
+  <rect x="25" y="25" width="1750" height="1130" class="bg"/>
+  <text x="900.0" y="70" text-anchor="middle" class="title">Figura 4.1. Diagrama de clases</text>
+  <text x="900" y="98" text-anchor="middle" class="subtitle">Modelo conceptual de las entidades principales de Be: Confident</text>
+  <rect x="90" y="160" width="260" height="110" class="class"/>
+  <rect x="90" y="160" width="260" height="42" class="classHead"/>
+  <text x="220.0" y="187" text-anchor="middle" class="h">Usuario</text>
+  <text x="108" y="230" text-anchor="start" class="t">id: uuid</text>
+  <text x="108" y="254" text-anchor="start" class="t">email: string</text>
+  <rect x="470" y="125" width="320" height="206" class="class"/>
+  <rect x="470" y="125" width="320" height="42" class="classHead"/>
+  <text x="630.0" y="152" text-anchor="middle" class="h">Perfil</text>
+  <text x="488" y="195" text-anchor="start" class="t">id: uuid</text>
+  <text x="488" y="219" text-anchor="start" class="t">username: string</text>
+  <text x="488" y="243" text-anchor="start" class="t">nombre: string</text>
+  <text x="488" y="267" text-anchor="start" class="t">bio: string</text>
+  <text x="488" y="291" text-anchor="start" class="t">avatar_url: string</text>
+  <text x="488" y="315" text-anchor="start" class="t">setup_completo: boolean</text>
+  <rect x="930" y="110" width="350" height="230" class="class"/>
+  <rect x="930" y="110" width="350" height="42" class="classHead"/>
+  <text x="1105.0" y="137" text-anchor="middle" class="h">Prenda</text>
+  <text x="948" y="180" text-anchor="start" class="t">id: uuid</text>
+  <text x="948" y="204" text-anchor="start" class="t">usuario_id: uuid</text>
+  <text x="948" y="228" text-anchor="start" class="t">tipo: prenda | outfit</text>
+  <text x="948" y="252" text-anchor="start" class="t">genero: string</text>
+  <text x="948" y="276" text-anchor="start" class="t">imagen_url: string</text>
+  <text x="948" y="300" text-anchor="start" class="t">descripcion: string</text>
+  <text x="948" y="324" text-anchor="start" class="t">metadata_ia: json</text>
+  <rect x="1390" y="125" width="320" height="206" class="class"/>
+  <rect x="1390" y="125" width="320" height="42" class="classHead"/>
+  <text x="1550.0" y="152" text-anchor="middle" class="h">CalendarOutfit</text>
+  <text x="1408" y="195" text-anchor="start" class="t">id: uuid</text>
+  <text x="1408" y="219" text-anchor="start" class="t">usuario_id: uuid</text>
+  <text x="1408" y="243" text-anchor="start" class="t">fecha: date</text>
+  <text x="1408" y="267" text-anchor="start" class="t">imagen_url: string</text>
+  <text x="1408" y="291" text-anchor="start" class="t">descripcion: string</text>
+  <text x="1408" y="315" text-anchor="start" class="t">metadata: json</text>
+  <rect x="90" y="470" width="320" height="206" class="class"/>
+  <rect x="90" y="470" width="320" height="42" class="classHead"/>
+  <text x="250.0" y="497" text-anchor="middle" class="h">Post</text>
+  <text x="108" y="540" text-anchor="start" class="t">id: uuid</text>
+  <text x="108" y="564" text-anchor="start" class="t">usuario_id: uuid</text>
+  <text x="108" y="588" text-anchor="start" class="t">imagen_url: string</text>
+  <text x="108" y="612" text-anchor="start" class="t">descripcion: string</text>
+  <text x="108" y="636" text-anchor="start" class="t">prendas: json</text>
+  <text x="108" y="660" text-anchor="start" class="t">created_at: timestamp</text>
+  <rect x="500" y="470" width="260" height="134" class="class"/>
+  <rect x="500" y="470" width="260" height="42" class="classHead"/>
+  <text x="630.0" y="497" text-anchor="middle" class="h">Like</text>
+  <text x="518" y="540" text-anchor="start" class="t">id: uuid</text>
+  <text x="518" y="564" text-anchor="start" class="t">post_id: uuid</text>
+  <text x="518" y="588" text-anchor="start" class="t">usuario_id: uuid</text>
+  <rect x="830" y="455" width="300" height="182" class="class"/>
+  <rect x="830" y="455" width="300" height="42" class="classHead"/>
+  <text x="980.0" y="482" text-anchor="middle" class="h">Comment</text>
+  <text x="848" y="525" text-anchor="start" class="t">id: uuid</text>
+  <text x="848" y="549" text-anchor="start" class="t">post_id: uuid</text>
+  <text x="848" y="573" text-anchor="start" class="t">usuario_id: uuid</text>
+  <text x="848" y="597" text-anchor="start" class="t">texto: string</text>
+  <text x="848" y="621" text-anchor="start" class="t">created_at: timestamp</text>
+  <rect x="1230" y="455" width="320" height="182" class="class"/>
+  <rect x="1230" y="455" width="320" height="42" class="classHead"/>
+  <text x="1390.0" y="482" text-anchor="middle" class="h">Wishlist</text>
+  <text x="1248" y="525" text-anchor="start" class="t">id: uuid</text>
+  <text x="1248" y="549" text-anchor="start" class="t">usuario_id: uuid</text>
+  <text x="1248" y="573" text-anchor="start" class="t">post_id: uuid</text>
+  <text x="1248" y="597" text-anchor="start" class="t">imagen_url: string</text>
+  <text x="1248" y="621" text-anchor="start" class="t">descripcion: string</text>
+  <rect x="450" y="810" width="360" height="158" class="class"/>
+  <rect x="450" y="810" width="360" height="42" class="classHead"/>
+  <text x="630.0" y="837" text-anchor="middle" class="h">Friendship</text>
+  <text x="468" y="880" text-anchor="start" class="t">id: uuid</text>
+  <text x="468" y="904" text-anchor="start" class="t">requester_id: uuid</text>
+  <text x="468" y="928" text-anchor="start" class="t">addressee_id: uuid</text>
+  <text x="468" y="952" text-anchor="start" class="t">status: pending | accepted | rejected</text>
+  <rect x="980" y="790" width="350" height="206" class="class"/>
+  <rect x="980" y="790" width="350" height="42" class="classHead"/>
+  <text x="1155.0" y="817" text-anchor="middle" class="h">Notification</text>
+  <text x="998" y="860" text-anchor="start" class="t">id: uuid</text>
+  <text x="998" y="884" text-anchor="start" class="t">usuario_id: uuid</text>
+  <text x="998" y="908" text-anchor="start" class="t">from_user_id: uuid</text>
+  <text x="998" y="932" text-anchor="start" class="t">tipo: string</text>
+  <text x="998" y="956" text-anchor="start" class="t">mensaje: string</text>
+  <text x="998" y="980" text-anchor="start" class="t">leida: boolean</text>
+  <line x1="350" y1="215" x2="470" y2="215" class="line" marker-end="url(#arrow)"/>
+  <text x="410" y="200" text-anchor="middle" class="s">1 a 1</text>
+  <line x1="350" y1="230" x2="930" y2="230" class="line" marker-end="url(#arrow)"/>
+  <text x="640" y="216" text-anchor="middle" class="s">1 a *</text>
+  <polyline points="220,285 220,385 1550,385 1550,125" class="line" marker-end="url(#arrow)"/>
+  <text x="1450" y="374" text-anchor="middle" class="s">1 a *</text>
+  <line x1="220" y1="285" x2="250" y2="470" class="line" marker-end="url(#arrow)"/>
+  <text x="260" y="380" text-anchor="middle" class="s">1 a *</text>
+  <polyline points="220,285 220,735 630,735 630,810" class="line" marker-end="url(#arrow)"/>
+  <text x="420" y="724" text-anchor="middle" class="s">1 a *</text>
+  <polyline points="220,285 220,1040 1155,1040 1155,790" class="line" marker-end="url(#arrow)"/>
+  <text x="680" y="1028" text-anchor="middle" class="s">1 a *</text>
+  <line x1="410" y1="540" x2="500" y2="540" class="line" marker-end="url(#arrow)"/>
+  <text x="455" y="526" text-anchor="middle" class="s">1 a *</text>
+  <line x1="410" y1="585" x2="830" y2="520" class="line" marker-end="url(#arrow)"/>
+  <text x="620" y="532" text-anchor="middle" class="s">1 a *</text>
+  <line x1="410" y1="635" x2="1230" y2="540" class="line" marker-end="url(#arrow)"/>
+  <text x="820" y="566" text-anchor="middle" class="s">1 a *</text>
+  <text x="90" y="1100" text-anchor="start" class="subtitle">Nota. El diagrama representa las relaciones persistentes principales usadas por Supabase/PostgreSQL.</text>
+</svg>

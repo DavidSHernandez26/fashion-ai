@@ -1,0 +1,18 @@
+@startuml
+title C4 Nivel 2 - Contenedores
+
+actor Usuario
+rectangle "App React/Capacitor" as Frontend
+rectangle "API Express" as API
+database "Supabase Auth/Postgres/Storage" as Supabase
+cloud "OpenAI API" as OpenAI
+rectangle "FastAPI rembg" as Rembg
+cloud "Servicio de clima desde frontend" as Clima
+
+Usuario --> Frontend : interactúa
+Frontend --> API : HTTPS/JSON
+API --> Supabase : datos, auth y storage
+API --> OpenAI : prompts y visión
+API --> Rembg : remove-bg
+Frontend --> Clima : ubicación y pronóstico
+@enduml

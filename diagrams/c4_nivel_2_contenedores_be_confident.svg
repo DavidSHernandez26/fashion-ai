@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="850" viewBox="0 0 1400 850">
+  <defs>
+    <style>
+      .title{font:700 30px Arial,sans-serif;fill:#111827}.label{font:17px Arial,sans-serif;fill:#111827}.small{font:14px Arial,sans-serif;fill:#475569}
+      .bg{fill:#f8fafc;stroke:#cbd5e1;stroke-width:1.5;rx:20}.box{fill:#fff;stroke:#2563eb;stroke-width:2.5;rx:14}.db{fill:#fff7ed;stroke:#ea580c;stroke-width:2.5;rx:14}.cloud{fill:#eef2ff;stroke:#4f46e5;stroke-width:2.5;rx:24}.line{stroke:#334155;stroke-width:2.3;fill:none}.actor{stroke:#111827;stroke-width:2;fill:none}
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#334155"/></marker>
+  </defs>
+  <rect x="25" y="25" width="1350" height="800" class="bg"/>
+  <text x="700" y="70" text-anchor="middle" class="title">Modelo C4 - Nivel 2: Contenedores</text>
+
+  <circle cx="120" cy="325" r="20" class="actor"/><line x1="120" y1="345" x2="120" y2="410" class="actor"/><line x1="80" y1="370" x2="160" y2="370" class="actor"/><line x1="120" y1="410" x2="85" y2="460" class="actor"/><line x1="120" y1="410" x2="155" y2="460" class="actor"/><text x="120" y="495" text-anchor="middle" class="label">Usuario</text>
+
+  <rect x="270" y="270" width="280" height="130" class="box"/><text x="410" y="325" text-anchor="middle" class="label">App React/Capacitor</text><text x="410" y="354" text-anchor="middle" class="small">Web + Android/iOS</text>
+  <rect x="710" y="270" width="250" height="130" class="box"/><text x="835" y="325" text-anchor="middle" class="label">API Express</text><text x="835" y="354" text-anchor="middle" class="small">Reglas de negocio</text>
+  <rect x="1085" y="120" width="250" height="110" class="db"/><text x="1210" y="170" text-anchor="middle" class="label">Supabase Auth</text><text x="1210" y="198" text-anchor="middle" class="small">Postgres / Storage</text>
+  <rect x="1085" y="300" width="250" height="90" class="cloud"/><text x="1210" y="354" text-anchor="middle" class="label">OpenAI API</text>
+  <rect x="1085" y="475" width="250" height="90" class="box"/><text x="1210" y="529" text-anchor="middle" class="label">FastAPI rembg</text>
+  <rect x="270" y="590" width="280" height="100" class="cloud"/><text x="410" y="633" text-anchor="middle" class="label">Servicio de clima</text><text x="410" y="660" text-anchor="middle" class="small">desde frontend</text>
+
+  <line x1="160" y1="345" x2="270" y2="335" class="line" marker-end="url(#arrow)"/><text x="180" y="325" class="small">interactúa</text>
+  <line x1="550" y1="335" x2="710" y2="335" class="line" marker-end="url(#arrow)"/><text x="595" y="318" class="small">HTTPS/JSON</text>
+  <line x1="960" y1="310" x2="1085" y2="190" class="line" marker-end="url(#arrow)"/><text x="990" y="230" class="small">datos/auth/storage</text>
+  <line x1="960" y1="345" x2="1085" y2="345" class="line" marker-end="url(#arrow)"/><text x="995" y="330" class="small">prompts/visión</text>
+  <line x1="915" y1="400" x2="1085" y2="512" class="line" marker-end="url(#arrow)"/><text x="963" y="475" class="small">remove-bg</text>
+  <line x1="410" y1="400" x2="410" y2="590" class="line" marker-end="url(#arrow)"/><text x="426" y="502" class="small">ubicación/pronóstico</text>
+</svg>

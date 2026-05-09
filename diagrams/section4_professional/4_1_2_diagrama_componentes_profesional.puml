@@ -1,0 +1,49 @@
+@startuml
+skinparam componentStyle rectangle
+package "Frontend React/Vite/Capacitor" {
+  component Auth
+  component Closet
+  component Asistente
+  component Calendario
+  component "Feed/Amigos/Perfil" as SocialUI
+  component UploadModal
+  component VirtualMannequin
+  component WeatherService
+}
+package "Backend Node.js Express" {
+  component "API REST" as API
+  component "Auth Middleware" as AuthMid
+  component "Upload + Multer" as Upload
+  component Sharp
+  component "Motor prompts IA" as Prompts
+  component Cache
+  component Notificaciones
+}
+package "Servicios externos" {
+  component "Supabase Auth" as SupaAuth
+  database "Supabase Postgres" as DB
+  storage "Supabase Storage" as Storage
+  component "OpenAI Vision/Chat" as OpenAI
+  component "FastAPI rembg" as Rembg
+  component "Clima/Geolocalización" as Weather
+}
+Auth --> SupaAuth
+Closet --> API
+Asistente --> API
+Calendario --> API
+SocialUI --> API
+UploadModal --> API
+Asistente --> VirtualMannequin
+WeatherService --> Weather
+API --> AuthMid
+API --> Upload
+Upload --> Sharp
+Sharp --> Rembg
+API --> Prompts
+Prompts --> OpenAI
+API --> DB
+API --> Storage
+AuthMid --> SupaAuth
+API --> Cache
+API --> Notificaciones
+@enduml

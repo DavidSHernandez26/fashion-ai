@@ -1,0 +1,63 @@
+@startuml
+skinparam classAttributeIconSize 0
+class Usuario { id: uuid
+email: string }
+class Perfil { id: uuid
+username: string
+nombre: string
+bio: string
+avatar_url: string
+setup_completo: boolean }
+class Prenda { id: uuid
+usuario_id: uuid
+tipo: prenda|outfit
+genero: string
+imagen_url: string
+descripcion: string
+metadata_ia: json }
+class CalendarOutfit { id: uuid
+usuario_id: uuid
+fecha: date
+imagen_url: string
+descripcion: string
+metadata: json }
+class Post { id: uuid
+usuario_id: uuid
+imagen_url: string
+descripcion: string
+prendas: json
+created_at: timestamp }
+class Like { id: uuid
+post_id: uuid
+usuario_id: uuid }
+class Comment { id: uuid
+post_id: uuid
+usuario_id: uuid
+texto: string
+created_at: timestamp }
+class Wishlist { id: uuid
+usuario_id: uuid
+post_id: uuid
+imagen_url: string
+descripcion: string }
+class Friendship { id: uuid
+requester_id: uuid
+addressee_id: uuid
+status: pending|accepted|rejected }
+class Notification { id: uuid
+usuario_id: uuid
+from_user_id: uuid
+tipo: string
+mensaje: string
+leida: boolean }
+Usuario "1" -- "1" Perfil
+Usuario "1" -- "*" Prenda
+Usuario "1" -- "*" CalendarOutfit
+Usuario "1" -- "*" Post
+Usuario "1" -- "*" Wishlist
+Usuario "1" -- "*" Friendship
+Usuario "1" -- "*" Notification
+Post "1" -- "*" Like
+Post "1" -- "*" Comment
+Post "1" -- "*" Wishlist
+@enduml

@@ -1,0 +1,40 @@
+@startuml
+skinparam componentStyle rectangle
+
+node "Dispositivo usuario" {
+  artifact "Web App React"
+  artifact "App Android/iOS Capacitor"
+}
+
+node "Vercel/Hosting estático" {
+  artifact "Frontend build"
+}
+
+node "Railway" {
+  node "Node.js Express API"
+}
+
+node "Servicio rembg" {
+  node "FastAPI + rembg models"
+}
+
+cloud "Supabase" {
+  database "PostgreSQL"
+  storage "Storage bucket prendas"
+  component "Auth"
+}
+
+cloud "OpenAI API" {
+  component "Chat/Vision model"
+}
+
+"Frontend build" --> "Web App React" : entrega app
+"Web App React" --> "Node.js Express API" : HTTPS
+"App Android/iOS Capacitor" --> "Node.js Express API" : HTTPS
+"Web App React" --> "Auth" : sesión/JWT
+"App Android/iOS Capacitor" --> "Auth" : sesión/JWT
+"Node.js Express API" --> "PostgreSQL" : consultas
+"Node.js Express API" --> "Storage bucket prendas" : imágenes
+"Node.js Express API" --> "OpenAI API" : análisis/recomendación
+"Node.js Express API" --> "FastAPI + rembg models" : remove-bg
+@enduml

@@ -1,0 +1,55 @@
+@startuml
+title 4.1.3 Diagrama de actividades - Subida y análisis de prenda
+
+start
+:Usuario abre modal de subida;
+:Selecciona tipo "prenda" u "outfit";
+:Elige imagen desde cámara o galería;
+:Frontend comprime la imagen;
+:Frontend obtiene sesión JWT de Supabase;
+:Envía FormData al backend Express;
+
+if (¿JWT válido?) then (Sí)
+  :Backend recibe archivo con Multer;
+  :Lee buffer de imagen;
+  :Rota y optimiza imagen con Sharp;
+
+  if (¿Tipo = prenda?) then (Sí)
+    :Solicita remoción de fondo a FastAPI rembg;
+    if (¿Fondo removido correctamente?) then (Sí)
+      :Usa imagen PNG sin fondo;
+    else (No)
+      :Usa imagen original optimizada;
+    endif
+    :Sube imagen a Supabase Storage;
+    :Envía imagen a OpenAI Vision;
+    :OpenAI devuelve metadata de moda;
+
+    if (¿La imagen contiene una prenda válida?) then (Sí)
+      :Construye descripción;
+      :Inserta registro en tabla prendas;
+      :Invalida cache de prendas;
+      :Responde éxito al frontend;
+    else (No)
+      :Elimina archivo del storage;
+      :Responde error 422;
+    endif
+
+  else (Outfit)
+    :Sube imagen completa a Supabase Storage;
+    :Envía imagen a OpenAI Vision;
+    :Detecta prendas visibles del outfit;
+    :Inserta outfit en tabla prendas;
+    :Invalida cache de prendas;
+    :Responde éxito al frontend;
+  endif
+
+  :Frontend actualiza estado de carga;
+  :Frontend refresca closet;
+else (No)
+  :Backend responde 401 no autenticado;
+  :Frontend muestra error de sesión;
+endif
+
+stop
+@enduml
