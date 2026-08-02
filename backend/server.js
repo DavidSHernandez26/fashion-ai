@@ -1014,6 +1014,293 @@ async function registrarRachaHoy(usuario_id) {
   } catch { /* duplicado o error — la racha deduplica por Set */ }
 }
 
+/* ─────────────────────────────────────
+   🌊 FASHION STREAMING — SSE typewriter
+───────────────────────────────────────── */
+app.post("/api/fashion/stream", requireAuth, aiLimiter, async (req, res) => {
+  try {
+    const usuario_id = req.userId;
+    const { mensaje, historial = [], outfit_ids_anteriores = [], clima } = req.body;
+    if (!mensaje) return res.status(400).json({ error: "Faltan datos" });
+    if (!Array.isArray(historial) || !Array.isArray(outfit_ids_anteriores))
+      return res.status(400).json({ error: "Formato inválido" });
+
+    /* ── Carga en paralelo ── */
+    let prendas = getCachedPrendas(usuario_id);
+    const [prendasResult, perfilResult, calendarioResult] = await Promise.allSettled([
+      prendas
+        ? Promise.resolve({ data: prendas })
+        : supabase.from("prendas").select("*").eq("usuario_id", usuario_id).order("created_at", { ascending: false }),
+      supabase.from("profiles").select("nombre, bio, genero").eq("id", usuario_id).single(),
+      supabase.from("calendario")
+        .select("fecha, descripcion, metadata")
+        .eq("usuario_id", usuario_id)
+        .gte("fecha", (() => { const d = new Date(); d.setDate(d.getDate() - 14); return d.toISOString().split("T")[0]; })())
+        .order("fecha", { ascending: false })
+        .limit(10),
+    ]);
+
+    if (!prendas) {
+      prendas = prendasResult.status === "fulfilled" ? (prendasResult.value.data || []) : [];
+      if (prendas.length) setCachedPrendas(usuario_id, prendas);
+    }
+
+    const perfil = perfilResult.status === "fulfilled" ? perfilResult.value.data : null;
+    const calendarioReciente = calendarioResult.status === "fulfilled" ? (calendarioResult.value.data || []) : [];
+
+    if (!prendas || prendas.length === 0) {
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+      res.setHeader("X-Accel-Buffering", "no");
+      res.flushHeaders();
+      res.write(`data: ${JSON.stringify({ type: "text", chunk: "No tienes prendas registradas aún. ¡Sube algunas fotos de tu closet para que pueda ayudarte!" })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: "done", outfit: [], outfit_guardado: null, cambiar_panel: false, sugerencias: [] })}\n\n`);
+      res.write("data: [DONE]\n\n");
+      return res.end();
+    }
+
+    const prendasSueltas = prendas.filter((p) => p.tipo === "prenda");
+    const outfitsGuardados = prendas.filter((p) => p.tipo === "outfit");
+
+    const contextoPrendas = prendasSueltas.length > 0
+      ? "PRENDAS DISPONIBLES EN EL CLOSET:\n" + prendasSueltas.map(formatPrendaRica).join("\n\n")
+      : "No hay prendas sueltas disponibles.";
+
+    const contextoOutfits = outfitsGuardados.length > 0
+      ? "\n\nOUTFITS GUARDADOS (referencia de estilo del usuario):\n" +
+        outfitsGuardados.map((p) => {
+          const lista = p.metadata_ia?.prendas?.map((x) => `${x.nombre} (${x.color})`).join(", ") || "";
+          return `[ID:${p.id}] ${p.descripcion}${lista ? ` — incluye: ${lista}` : ""}`;
+        }).join("\n")
+      : "";
+
+    const prendasActuales = prendasSueltas.filter((p) => outfit_ids_anteriores.includes(p.id));
+    const contextoActual = prendasActuales.length > 0
+      ? "\n\nOUTFIT YA MOSTRADO AL USUARIO (EVITAR REPETIR):\n" + prendasActuales.map(formatPrendaRica).join("\n\n")
+      : "";
+
+    const IDS_RECIENTES = new Set();
+    const contextoCalendario = calendarioReciente.length > 0
+      ? "\n\nOUTFITS USADOS RECIENTEMENTE (últimos 14 días — EVITA repetir):\n" +
+        calendarioReciente.map((e) => {
+          const ids = e.metadata?.outfit_ids || [];
+          ids.forEach(id => IDS_RECIENTES.add(id));
+          const prendNames = ids.length
+            ? prendasSueltas.filter(p => ids.includes(p.id)).map(p => p.descripcion.split(" - ")[0]).join(", ")
+            : e.descripcion || "outfit sin detalle";
+          return `• ${e.fecha}: ${prendNames}`;
+        }).join("\n")
+      : "";
+
+    const contextoPerfil = perfil
+      ? (() => {
+          const partes = [];
+          if (perfil.nombre)  partes.push(`Nombre: ${perfil.nombre}`);
+          if (perfil.genero)  partes.push(`Género: ${perfil.genero}`);
+          if (perfil.bio)     partes.push(`Bio/Estilo personal: "${perfil.bio}"`);
+          return partes.length ? `\n\nPERFIL DEL USUARIO:\n${partes.join("\n")}` : "";
+        })()
+      : "";
+
+    const historialTexto = historial.length > 0
+      ? "\n\nHISTORIAL DE CONVERSACIÓN:\n" +
+        historial.map((h) => `${h.role === "user" ? "Usuario" : "Asistente"}: ${h.text}`).join("\n")
+      : "";
+
+    const contextoClima = generarContextoClima(clima);
+
+    const prendas_usadas_ids = [...new Set([...IDS_RECIENTES, ...outfit_ids_anteriores])];
+    const avisoRepeticion = prendas_usadas_ids.length > 0
+      ? `\n\nEXCLUSIÓN OBLIGATORIA: Los IDs [${prendas_usadas_ids.join(", ")}] NO pueden aparecer en outfit_ids.`
+      : "";
+
+    /* ── SSE headers ── */
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.flushHeaders();
+
+    /* ── Cancelar si el cliente desconecta ── */
+    let clientGone = false;
+    req.on("close", () => { clientGone = true; });
+
+    /* ── OpenAI streaming ── */
+    const stream = await openai.chat.completions.create({
+      model: MODEL,
+      messages: [
+        {
+          role: "system",
+          content: `Eres un estilista personal experto con conocimiento profundo de teoría del color, tendencias actuales y psicología de la moda.
+
+Tu misión: armar el outfit más inteligente posible usando EXACTAMENTE las prendas del closet del usuario.
+
+ESTRUCTURA OBLIGATORIA DEL OUTFIT (sin excepciones):
+
+── PLANTILLA A — CLÁSICO (sin vestido) ── mínimo 4 prendas + 1 accesorio = 5 piezas ──
+  ① parte superior: camiseta, camisa, polo, blusa — SIEMPRE OBLIGATORIA
+  ② parte inferior: pantalón, jean, short, falda — SIEMPRE OBLIGATORIA
+  ③ calzado — SIEMPRE OBLIGATORIO
+  ④ abrigo/chaqueta — OBLIGATORIO si sensación < 18°C o lluvia ≥ 40%; OMITIR si > 25°C
+  ⑤ accesorio — MÍNIMO 1 SIEMPRE OBLIGATORIO (gorra, bolso, reloj, collar, cinturón, lentes…)
+     Incluye TODOS los accesorios del closet que complementen el look.
+
+── PLANTILLA B — VESTIDO / JUMPSUIT / MONO ── (cuenta como ①+② en uno) ──
+  ① vestido/jumpsuit/mono (reemplaza superior + inferior — NUNCA añadir pantalón ni camiseta)
+  ② calzado — SIEMPRE OBLIGATORIO
+  ③ accesorio — MÍNIMO 1 SIEMPRE OBLIGATORIO
+  ④ abrigo — OBLIGATORIO si sensación < 18°C; OMITIR si > 25°C
+
+REGLAS DURAS:
+✗ NUNCA mezclar plantillas. ✗ NUNCA 2 prendas del mismo tipo. ✗ Sudadera/hoodie = abrigo.
+✗ Si no hay accesorios en el closet, menciónalos explícitamente: "No veo accesorios en tu closet."
+✓ Si pide cambiar solo una pieza → mantén el resto igual, solo cambia esa.
+✓ outfit_ids SOLO contiene IDs de prendas sueltas (tipo=prenda), NUNCA outfits guardados.
+
+CONTROL DEL PANEL:
+• "cambiar_panel": true → usuario pide outfit nuevo, diferente o cambiar una prenda
+• "cambiar_panel": false → solo hace una pregunta, pide consejo o comenta
+
+Devuelve SIEMPRE y ÚNICAMENTE este JSON (sin texto antes ni después):
+{"respuesta":"[apertura del look + bullets: • prenda — razón específica + 💡 Tip]","outfit_ids":[id1,id2,id3],"cambiar_panel":true,"sugerencias":[{"text":"Sin chaqueta","action":"remove","tipo":"abrigo"},{"text":"Cambiar calzado","action":"swap","tipo":"calzado"},{"text":"¿Algo más formal?","action":"chat"}]}
+
+"sugerencias": array de 2-3 objetos de acción concreta para el outfit:
+• {"action":"remove","tipo":"[tipo]","text":"Sin [prenda]"} → quita esa prenda instantáneamente sin llamar a la IA
+• {"action":"swap","tipo":"[tipo]","text":"Cambiar [prenda]"} → el usuario elige otra prenda de su closet
+• {"action":"chat","text":"[pregunta o variación]"} → continúa la conversación con el asistente
+Tipos válidos para tipo: parte superior, parte inferior, calzado, abrigo, gorra, accesorio
+text máximo 30 caracteres. NO incluyas "Guardar en calendario".
+
+Tono: cercano, seguro, como un amigo con buen gusto. Responde siempre en español.`,
+        },
+        {
+          role: "user",
+          content: `${contextoPerfil}${contextoClima}${contextoPrendas}${contextoOutfits}${contextoActual}${contextoCalendario}${avisoRepeticion}${historialTexto}\n\nMensaje del usuario: ${mensaje}`,
+        },
+      ],
+      max_tokens: 900,
+      temperature: 0.7,
+      stream: true,
+    });
+
+    /* ── State machine: extrae "respuesta" mientras acumula el JSON completo ── */
+    const MARKER = '"respuesta":"';
+    let state = "BEFORE_TEXT"; // BEFORE_TEXT | IN_TEXT | AFTER_TEXT
+    let markerBuf = "";
+    let fullAccumulated = "";
+    let pendingBackslash = false; // fix: escape split entre dos chunks
+
+    for await (const chunk of stream) {
+      if (clientGone) break;
+      const rawPiece = chunk.choices[0]?.delta?.content ?? "";
+      if (!rawPiece) continue;
+      fullAccumulated += rawPiece;
+
+      if (state === "AFTER_TEXT") continue;
+
+      let toProcess = rawPiece;
+
+      if (state === "BEFORE_TEXT") {
+        markerBuf += rawPiece;
+        const idx = markerBuf.indexOf(MARKER);
+        if (idx === -1) {
+          if (markerBuf.length > MARKER.length) markerBuf = markerBuf.slice(-MARKER.length);
+          continue;
+        }
+        toProcess = markerBuf.slice(idx + MARKER.length);
+        markerBuf = "";
+        state = "IN_TEXT";
+      }
+
+      // Extrae texto del campo respuesta, respetando escapes JSON
+      let text = "";
+      let i = 0;
+
+      // Si el chunk anterior terminó en \ suelto, procesarlo con el primer char de este chunk
+      if (pendingBackslash) {
+        pendingBackslash = false;
+        const esc = toProcess[0] ?? "";
+        if (esc === "n")  { text += "\n"; i = 1; }
+        else if (esc === '"') { text += '"'; i = 1; }
+        else if (esc === "t") { text += "\t"; i = 1; }
+        else if (esc === "\\") { text += "\\"; i = 1; }
+        else { text += "\\"; } // esc desconocido: emitir el backslash, no avanzar
+      }
+
+      while (i < toProcess.length) {
+        const ch = toProcess[i];
+        if (ch === "\\") {
+          if (i + 1 < toProcess.length) {
+            const esc = toProcess[i + 1];
+            if (esc === "n")  text += "\n";
+            else if (esc === '"')  text += '"';
+            else if (esc === "t")  text += "\t";
+            else if (esc === "\\") text += "\\";
+            else text += esc;
+            i += 2;
+          } else {
+            // Backslash al final del chunk — guardarlo para el siguiente
+            pendingBackslash = true;
+            break;
+          }
+        } else if (ch === '"') {
+          state = "AFTER_TEXT";
+          break;
+        } else {
+          text += ch;
+          i++;
+        }
+      }
+
+      if (text && !clientGone) {
+        res.write(`data: ${JSON.stringify({ type: "text", chunk: text })}\n\n`);
+      }
+    }
+
+    if (clientGone) return res.end();
+
+    /* ── Parsear JSON completo y enviar evento final ── */
+    const parsed = safeParseJSON(fullAccumulated);
+
+    if (!parsed) {
+      const fallback = deduplicarPorTipo([...prendasSueltas].sort(() => Math.random() - 0.5));
+      registrarRachaHoy(usuario_id);
+      res.write(`data: ${JSON.stringify({ type: "done", outfit: fallback, outfit_guardado: null, cambiar_panel: true, sugerencias: [] })}\n\n`);
+      res.write("data: [DONE]\n\n");
+      return res.end();
+    }
+
+    const rawSugs = Array.isArray(parsed.sugerencias) ? parsed.sugerencias.slice(0, 3) : [];
+    const sugerencias = rawSugs
+      .map(s => typeof s === "string" ? { text: s, action: "chat" } : s)
+      .filter(s => s?.text);
+
+    const cambiarPanel = parsed.cambiar_panel ?? true;
+    const outfitGuardadoRecomendado = outfitsGuardados.find((p) => parsed.outfit_ids?.includes(p.id));
+
+    if (outfitGuardadoRecomendado) {
+      if (cambiarPanel) registrarRachaHoy(usuario_id);
+      res.write(`data: ${JSON.stringify({ type: "done", outfit: [], outfit_guardado: outfitGuardadoRecomendado, cambiar_panel: cambiarPanel, sugerencias })}\n\n`);
+    } else {
+      const outfitBruto = prendasSueltas.filter((p) => parsed.outfit_ids?.includes(p.id));
+      const outfit = deduplicarPorTipo(outfitBruto);
+      const fallback = deduplicarPorTipo([...prendasSueltas].sort(() => Math.random() - 0.5));
+      if (cambiarPanel) registrarRachaHoy(usuario_id);
+      res.write(`data: ${JSON.stringify({ type: "done", outfit: outfit.length ? outfit : fallback, outfit_guardado: null, cambiar_panel: cambiarPanel, sugerencias })}\n\n`);
+    }
+
+    res.write("data: [DONE]\n\n");
+    res.end();
+  } catch (err) {
+    console.error("🔥 fashion/stream:", err.message);
+    if (!res.headersSent) return res.status(500).json({ error: "Error interno" });
+    res.write(`data: ${JSON.stringify({ type: "error", message: "Error al generar el outfit." })}\n\n`);
+    res.write("data: [DONE]\n\n");
+    res.end();
+  }
+});
+
 app.post("/api/fashion", requireAuth, aiLimiter, async (req, res) => {
   try {
     const usuario_id = req.userId;
@@ -1131,27 +1418,29 @@ Tu misión: armar el outfit más inteligente posible usando EXACTAMENTE las pren
 REGLAS DE COMBINACIÓN
 ═══════════════════════════════════════
 
-1. ESTRUCTURA DEL OUTFIT — elige UNA de estas dos plantillas según el closet:
+1. ESTRUCTURA DEL OUTFIT — OBLIGATORIA SIN EXCEPCIONES:
 
-   ── PLANTILLA A: CLÁSICO (sin vestido) ──
-   • 1 parte superior — camiseta, camisa, polo, blusa (OBLIGATORIO)
-   • 1 parte inferior — pantalón, jean, short, falda (OBLIGATORIO)
-   • 1 calzado (OBLIGATORIO)
-   • 1 abrigo — chaqueta, sudadera, blazer (OBLIGATORIO si sensación < 18°C o lluvia ≥ 40%; omitir si > 25°C)
-   • accesorios — gorra, bandolera/bolso, reloj, manilla, collar, cinturón, lentes, bufanda (incluye TODOS los que tengas disponibles y que realmente aporten al look; sin límite)
+   ── PLANTILLA A: CLÁSICO (sin vestido) — MÍNIMO 5 PIEZAS ──
+   ① parte superior — camiseta, camisa, polo, blusa            → SIEMPRE OBLIGATORIA
+   ② parte inferior — pantalón, jean, short, falda             → SIEMPRE OBLIGATORIA
+   ③ calzado — tenis, zapatos, botas, zapatillas                → SIEMPRE OBLIGATORIO
+   ④ abrigo  — chaqueta, sudadera, blazer                      → OBLIGATORIO si sensación < 18°C o lluvia ≥ 40%; OMITIR si > 25°C
+   ⑤ accesorio — gorra, bolso, reloj, collar, cinturón, lentes → MÍNIMO 1, SIEMPRE OBLIGATORIO
+      Incluye TODOS los accesorios disponibles en el closet que aporten al look.
 
-   ── PLANTILLA B: VESTIDO / JUMPSUIT / MONO ──
-   • 1 vestido / jumpsuit / mono completo (reemplaza parte superior + inferior — NUNCA añadir pantalón ni camiseta)
-   • 1 calzado (OBLIGATORIO)
-   • 1 abrigo (OBLIGATORIO si sensación < 18°C; OPCIONAL si templado; OMITIR si > 25°C)
-   • accesorios (todos los disponibles que aporten — sin límite)
+   ── PLANTILLA B: VESTIDO / JUMPSUIT / MONO — vestido cuenta como ①+② ──
+   ① vestido / jumpsuit / mono completo (NUNCA añadir pantalón ni camiseta encima)
+   ② calzado                                                    → SIEMPRE OBLIGATORIO
+   ③ accesorio                                                  → MÍNIMO 1, SIEMPRE OBLIGATORIO
+   ④ abrigo                                                     → OBLIGATORIO si < 18°C; OMITIR si > 25°C
 
-   REGLAS GLOBALES:
-   ✗ NUNCA mezclar plantillas (vestido + pantalón = error grave)
-   ✗ NUNCA 2 prendas del mismo tipo (ej: 2 abrigos)
+   REGLAS DURAS (sin excepciones):
+   ✗ NUNCA mezclar plantillas (vestido + pantalón = error crítico)
+   ✗ NUNCA 2 prendas del mismo tipo (ej: 2 abrigos, 2 camisetas)
    ✗ Sudadera y chaqueta = mismo tipo (abrigo). Solo una.
-   ✓ Si no hay abrigo disponible y hace frío, díselo en la respuesta
-   ✓ Incluye accesorios siempre que existan en el closet y complementen el look
+   ✗ Si no hay accesorios en el closet → menciónalos: "No veo accesorios, sería ideal agregar alguno."
+   ✓ Si no hay abrigo y hace frío, díselo en la respuesta
+   ✓ Incluye TODOS los accesorios del closet que complementen el look — no elijas solo uno si hay más
 
 2. TEORÍA DEL COLOR:
    • Neutros (negro, blanco, beige, gris, camel, marino) van con todo
@@ -1195,12 +1484,14 @@ REGLAS DE COMBINACIÓN
 
    Finalmente, 1 tip de estilo accionable (empieza con "💡 Tip:").
 
-   Ejemplo de respuesta correcta:
+   Ejemplo de respuesta correcta (con 5 prendas):
    "Look urbano relajado para un día de actividades 🧢
 
-   • Hoodie gris oversized — el gris actúa como neutro y el fit holgado equilibra el look con el pantalón ajustado
+   • Camiseta blanca básica — base limpia y neutra que da espacio a las piezas con más carácter
+   • Hoodie gris oversized — capa exterior que aporta volumen y un toque street sin esfuerzo
    • Jean slim negro — contrasta en fit con la parte superior y alarga la silueta
    • Tenis blancos — ancla el outfit con un punto limpio que abre el espacio visual
+   • Gorra negra — remata el look con actitud y unifica los tonos oscuros
 
    💡 Tip: dobla ligeramente el borde del jean para mostrar el tobillo y dar un toque más intencional al look."
 
@@ -1244,7 +1535,14 @@ REGLAS DE COMBINACIÓN
    → Evita ropa exclusivamente formal o muy ajustada; elige prendas que sirvan para varios momentos
 
 Devuelve SIEMPRE y ÚNICAMENTE este JSON (sin texto antes ni después):
-{"respuesta":"[respuesta con el formato del punto 8]","outfit_ids":[id1,id2,id3],"cambiar_panel":true}`,
+{"respuesta":"[respuesta con el formato del punto 8]","outfit_ids":[id1,id2,id3],"cambiar_panel":true,"sugerencias":[{"text":"Sin chaqueta","action":"remove","tipo":"abrigo"},{"text":"Cambiar calzado","action":"swap","tipo":"calzado"},{"text":"¿Algo más formal?","action":"chat"}]}
+
+"sugerencias": array de 2-3 objetos de acción concreta para el outfit recomendado:
+• {"action":"remove","tipo":"[tipo]","text":"Sin [prenda]"} → quita esa prenda del outfit instantáneamente
+• {"action":"swap","tipo":"[tipo]","text":"Cambiar [prenda]"} → el usuario elige otra prenda de su closet
+• {"action":"chat","text":"[variación o pregunta]"} → continúa la conversación
+Tipos válidos: parte superior, parte inferior, calzado, abrigo, gorra, accesorio. text ≤ 30 chars.
+NO incluyas "Guardar en calendario" — eso ya es un botón en la UI.`,
         },
         {
           role: "user",
@@ -1262,18 +1560,22 @@ Devuelve SIEMPRE y ÚNICAMENTE este JSON (sin texto antes ni después):
       registrarRachaHoy(usuario_id);
       return res.json({
         respuesta: "Te armé una combinación con lo que tienes disponible. ¡Pruébala y dime qué piensas!",
-        outfit: fallback, outfit_guardado: null, cambiar_panel: true,
+        outfit: fallback, outfit_guardado: null, cambiar_panel: true, sugerencias: [],
       });
     }
 
     const cambiarPanel = parsed.cambiar_panel ?? true;
+    const rawSugsF = Array.isArray(parsed.sugerencias) ? parsed.sugerencias.slice(0, 3) : [];
+    const sugerenciasF = rawSugsF
+      .map(s => typeof s === "string" ? { text: s, action: "chat" } : s)
+      .filter(s => s?.text);
     const outfitGuardadoRecomendado = outfitsGuardados.find((p) => parsed.outfit_ids?.includes(p.id));
 
     if (outfitGuardadoRecomendado) {
       if (cambiarPanel) registrarRachaHoy(usuario_id);
       return res.json({
         respuesta: parsed.respuesta,
-        outfit: [], outfit_guardado: outfitGuardadoRecomendado, cambiar_panel: cambiarPanel,
+        outfit: [], outfit_guardado: outfitGuardadoRecomendado, cambiar_panel: cambiarPanel, sugerencias: sugerenciasF,
       });
     }
 
@@ -1287,6 +1589,7 @@ Devuelve SIEMPRE y ÚNICAMENTE este JSON (sin texto antes ni después):
       outfit: outfit.length ? outfit : fallback,
       outfit_guardado: null,
       cambiar_panel: cambiarPanel,
+      sugerencias: sugerenciasF,
     });
   } catch (err) {
     console.error("🔥 fashion:", err.message);
