@@ -103,6 +103,18 @@ Decisiones mías dentro de eso:
 10. **Fotos de outfits guardados.** Siguen pudiendo recomendarse: son candidatos más, y su regla se calcula a partir del `color_hex` de cada prenda detectada. Con una regla pedida, solo entran si la cumplen.
 11. **Ediciones y exclusiones.** "Cambia solo X" genera combinaciones con el resto de las prendas fijo e intenta mantener la regla; si no puede, nombra la nueva regla. "Sin X / no quiero X" se detecta en el backend y excluye esa prenda o ese tipo del generador. Los chips de quitar o cambiar y el cambio manual siguen funcionando igual en el frontend. **La regla que se guarda en el calendario la recalcula el backend** a partir de los IDs, sin confiar en lo que envía el frontend. Esto reemplaza la decisión 7 en cuanto a la fuente de la regla.
 
+## Botón de reanalizar (decisión del usuario)
+
+El botón que completa el análisis de color de lo ya subido debe estar **visible y fácil de encontrar tanto en la app (iOS/Android) como en el navegador, en celular y en escritorio**. Hoy (`Closet.jsx`, clase `mac-reanalizar-btn`) solo aparece en la pestaña de prendas, se llama "Mejorar IA" y en pantallas angostas queda apretado al final de la barra.
+
+Decisiones mías para cumplirlo:
+- Se muestra en **las dos pestañas** (prendas y outfits), porque el reanálisis ahora cubre ambas.
+- Se usa un **texto claro sobre lo que hace**, por ejemplo "Analizar colores", y no "Mejorar IA".
+- En pantallas ≤ 768 px no compite con el selector de orden: va en su propia línea o como botón de ancho completo. Se ve sin hacer scroll horizontal y es tocable (mínimo 44 px de alto).
+- **Aviso proactivo:** si hay prendas u outfits sin color medible, aparece arriba del Closet un aviso corto con el conteo ("12 prendas sin analizar · Analizar ahora") que dispara lo mismo. Cuando no queda nada pendiente, el aviso desaparece.
+- Mientras corre muestra progreso ("Analizando…") y al terminar un resultado ("18 de 20 analizadas"). Si falla, dice que falló y permite reintentar.
+- El backend devuelve cuántos elementos quedan pendientes para que el frontend decida si muestra el aviso. Puede ser un endpoint liviano o un campo en una respuesta existente; queda a criterio del implementador.
+
 ## Lo que queda a criterio del implementador
 
 - El algoritmo exacto del color dominante (cuantización, número de clusters).
