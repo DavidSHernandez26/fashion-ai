@@ -19,7 +19,7 @@ def get_session(model_name: str):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    get_session("isnet-general-use")
+    get_session("birefnet-general")
     yield
 
 
