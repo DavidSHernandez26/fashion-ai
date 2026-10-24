@@ -12,8 +12,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Pre-descargar modelos durante el build para arranque rápido
 RUN python -c "\
 from rembg import new_session; \
-print('Descargando isnet-general-use...'); \
-new_session('isnet-general-use'); \
+print('Descargando birefnet-general...'); \
+new_session('birefnet-general'); \
 print('Modelos listos')"
 
 COPY --chown=user main.py .
