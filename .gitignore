@@ -143,3 +143,6 @@ vite.config.ts.timestamp-*
 # Uploads y metadatos de macOS
 uploads/
 .DS_Store
+
+# Superpowers (maquetas y espacios de trabajo)
+.superpowers/
